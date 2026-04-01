@@ -62,12 +62,26 @@ def load_proxies():
                     
     return proxies
 
+import re
+from bs4 import BeautifulSoup
+
+def normalize_text(text):
+    """Очищает текст от пунктуации и мусора для жесткого поиска"""
+    if pd.isna(text) or str(text).strip() == '':
+        return ""
+    
+    text = str(text).lower()
+    text = text.replace('ё', 'е') # Унифицируем букву ё
+    # Удаляем все знаки препинания, заменяя их на пробелы
+    text = re.sub(r'[^\w\s]', ' ', text)
+    # Сжимаем любые множественные пробелы и переносы в один пробел
+    return re.sub(r'\s+', ' ', text).strip()
+
 def check_page_content(url, anchor, keys, proxy=None):
     if pd.isna(url) or str(url).strip() == '':
         return False, "Пустой URL"
     
     target_url = str(url).strip()
-    # Автоподстановка протокола, если его нет
     if not target_url.startswith('http://') and not target_url.startswith('https://'):
         target_url = 'https://' + target_url
     
@@ -77,10 +91,7 @@ def check_page_content(url, anchor, keys, proxy=None):
     if not anchor_valid and not keys_valid:
         return False, "Пустые значения (C и D)"
 
-    proxies_dict = {
-        "http": proxy,
-        "https": proxy
-    } if proxy else None
+    proxies_dict = {"http": proxy, "https": proxy} if proxy else None
 
     try:
         headers = {
@@ -90,26 +101,33 @@ def check_page_content(url, anchor, keys, proxy=None):
             'Referer': 'https://google.com/'
         }
         
-        response = requests.get(
-            target_url, 
-            headers=headers, 
-            proxies=proxies_dict, 
-            timeout=30,
-            verify=False 
-        )
-        
-        # Если статус не 200 (ОК), генерируем HTTPError
+        response = requests.get(target_url, headers=headers, proxies=proxies_dict, timeout=30, verify=False)
         response.raise_for_status()
         
-        page_text = response.text.lower()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        for script in soup(["script", "style"]):
+            script.extract()
+            
+        # Получаем чистый текст со страницы и жестко его нормализуем
+        raw_page_text = soup.get_text(separator=' ')
+        normalized_page = normalize_text(raw_page_text)
+        
+        # Проверка на скрытую заглушку (когда сайт отдает ОК, но по факту там защита)
+        if "just a moment" in normalized_page or "checking your browser" in normalized_page or "ddos guard" in normalized_page:
+            return False, "Скрытая защита (Капча)"
         
         anchor_found = False
         if anchor_valid:
-            anchor_found = str(anchor).strip().lower() in page_text
+            norm_anchor = normalize_text(anchor)
+            if norm_anchor in normalized_page:
+                anchor_found = True
             
         keys_found = False
         if keys_valid:
-            keys_found = str(keys).strip().lower() in page_text
+            norm_keys = normalize_text(keys)
+            if norm_keys in normalized_page:
+                keys_found = True
 
         if anchor_found or keys_found:
             return True, "Найдено"
@@ -118,21 +136,17 @@ def check_page_content(url, anchor, keys, proxy=None):
             
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
-        if status == 403:
-            return False, "Блок защиты (Ош. 403)"
-        elif status == 404:
-            return False, "Страница не найдена (404)"
-        elif status == 429:
-            return False, "Капча / Лимит (Ош. 429)"
-        elif status >= 500:
-            return False, f"Сайт лежит (Ош. {status})"
+        if status == 403: return False, "Блок защиты (Ош. 403)"
+        elif status == 404: return False, "Страница не найдена (404)"
+        elif status == 429: return False, "Капча / Лимит (Ош. 429)"
+        elif status >= 500: return False, f"Сайт лежит (Ош. {status})"
         return False, f"HTTP Ошибка {status}"
         
     except requests.exceptions.ProxyError:
         return False, "Ошибка прокси"
     except requests.exceptions.Timeout:
         return False, "Долго отвечает"
-    except requests.RequestException as e:
+    except requests.RequestException:
         return False, "Ошибка подключения"
 
 @app.route('/', methods=['GET', 'POST'])
