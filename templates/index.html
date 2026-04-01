@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO Anchor Checker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #1a1a24;
+            --container-bg: #252535;
+            --text-color: #dcdde1;
+            --border-color: #3f3f5a;
+            --accent-color: #74b9ff;
+            --accent-hover: #0984e3;
+            --red-row: #3a1c1c; 
+            --red-btn: #e74c3c;
+            --red-btn-hover: #c0392b;
+            --green-btn: #2ecc71;
+            --green-btn-hover: #27ae60;
+            --orange-btn: #f39c12;
+            --orange-btn-hover: #d35400;
+        }
+
+        body { 
+            font-family: 'Montserrat', sans-serif; 
+            margin: 0; 
+            padding: 40px 20px; 
+            background-color: var(--bg-color); 
+            color: var(--text-color); 
+        }
+        
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            background: var(--container-bg); 
+            padding: 40px; 
+            border-radius: 16px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+        }
+
+        h2 { 
+            text-align: center; 
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 40px;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+        }
+
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .upload-area { 
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            padding: 30px 20px; 
+            border: 2px dashed #5f5f8e; 
+            border-radius: 16px; 
+            text-align: center; 
+            background-color: rgba(116, 185, 255, 0.05);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background-color: rgba(116, 185, 255, 0.1);
+            border-color: var(--accent-color);
+        }
+
+        .upload-area input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .cloud-icon {
+            width: 60px;
+            height: 60px;
+            fill: var(--accent-color);
+            margin-bottom: 10px;
+            transition: fill 0.3s ease;
+        }
+
+        .upload-text {
+            font-size: 14px;
+            color: #a4b0be;
+            font-weight: 500;
+        }
+
+        .upload-text strong {
+            color: var(--accent-color);
+        }
+
+        .or-divider {
+            margin: 20px 0;
+            color: #747d8c;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+
+        .paste-area {
+            width: 100%;
+            max-width: 450px;
+        }
+
+        .paste-area textarea {
+            width: 100%;
+            height: 120px;
+            background-color: rgba(116, 185, 255, 0.05);
+            border: 2px solid #5f5f8e;
+            border-radius: 12px;
+            padding: 15px;
+            color: #ffffff;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 13px;
+            resize: none;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        .paste-area textarea:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            background-color: rgba(116, 185, 255, 0.1);
+        }
+
+        .submit-btn { 
+            margin-top: 30px;
+            background-color: var(--accent-color); 
+            color: #1a1a24; 
+            padding: 14px 40px; 
+            border: none; 
+            border-radius: 8px; 
+            font-family: 'Montserrat', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer; 
+            transition: background-color 0.3s;
+            box-shadow: 0 4px 15px rgba(116, 185, 255, 0.2);
+        }
+
+        .submit-btn:hover { 
+            background-color: var(--accent-hover); 
+            color: #fff;
+        }
+
+        .proxy-info { 
+            font-size: 13px; 
+            color: #747d8c; 
+            margin-top: 15px; 
+        }
+
+        .loading-overlay {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            animation: fadeIn 0.5s;
+        }
+
+        .loading-overlay h3 {
+            color: var(--accent-color);
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .cat-gif {
+            max-width: 350px;
+            width: 100%;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .file-processed-info {
+            text-align: center;
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #a4b0be;
+            background: #1e1e2d;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 10px; 
+            font-size: 13px; 
+            font-weight: 500;
+        }
+        
+        th, td { 
+            border: 1px solid var(--border-color); 
+            padding: 12px 15px; 
+            text-align: left; 
+            word-break: break-word; 
+        }
+        
+        th { 
+            background-color: #2f3542; 
+            color: #ffffff; 
+            font-weight: 600; 
+        }
+        
+        tr:hover { background-color: rgba(255,255,255,0.02); }
+        
+        a { color: var(--accent-color); text-decoration: none; transition: color 0.2s; }
+        a:hover { color: #81ecec; text-decoration: underline; }
+        
+        .not-found { background-color: var(--red-row); } 
+        
+        .buttons-panel { 
+            margin-top: 40px; 
+            display: flex; 
+            justify-content: center; 
+            flex-wrap: wrap;
+            gap: 20px; 
+        }
+
+        .action-btn { 
+            padding: 14px 30px; 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 8px; 
+            font-family: 'Montserrat', sans-serif;
+            font-size: 14px;
+            font-weight: 600; 
+            color: white; 
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .copy-bad-btn { background-color: var(--red-btn); box-shadow: 0 4px 15px rgba(231, 76, 60, 0.2); }
+        .copy-bad-btn:hover { background-color: var(--red-btn-hover); transform: translateY(-2px); }
+
+        .copy-good-btn { background-color: var(--green-btn); box-shadow: 0 4px 15px rgba(46, 204, 113, 0.2); }
+        .copy-good-btn:hover { background-color: var(--green-btn-hover); transform: translateY(-2px); }
+
+        .clear-btn { background-color: var(--orange-btn); box-shadow: 0 4px 15px rgba(243, 156, 18, 0.2); }
+        .clear-btn:hover { background-color: var(--orange-btn-hover); transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Проверка размещения анкоров</h2>
+
+    {% if not results %}
+    <div class="upload-section" id="uploadSection">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            
+            <div class="upload-area" id="dropZone">
+                <svg class="cloud-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.36 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                </svg>
+                <div class="upload-text">Нажмите или перетащите <strong>Excel файл</strong> сюда</div>
+                <input type="file" name="file" accept=".xlsx, .xls" id="fileInput">
+            </div>
+            
+            <div class="or-divider">ИЛИ</div>
+
+            <div class="paste-area">
+                <textarea name="raw_text" id="pasteInput" placeholder="Вставьте скопированные строки (Ctrl+V) из Excel или Google Таблиц..."></textarea>
+            </div>
+            
+            <button class="submit-btn" type="submit" id="submitBtn">Запустить проверку</button>
+        </form>
+
+        <div class="loading-overlay" id="loadingOverlay">
+            <h3>Проверяем ссылки, пожалуйста подождите...</h3>
+            <img src="/fadding-cat.gif" alt="Проверка идет..." class="cat-gif">
+        </div>
+
+        <div class="proxy-info" id="proxyInfo">
+            Загружено прокси из proxy.txt: <strong>{{ proxy_count }}</strong>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results %}
+    <div class="file-processed-info">
+        Статистика по файлу: <strong style="color: #ffffff;">{{ filename }}</strong>
+    </div>
+
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Дата заказа (A)</th>
+                <th>Ссылка проекта (B)</th>
+                <th>Анкор (C)</th>
+                <th>Keywords (D)</th>
+                <th>Ссылка на сайт (E)</th>
+                <th>Дата проставки (F)</th>
+                <th>Тип ссылки (G)</th>
+                <th>Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in results %}
+            <tr class="{% if not row.found %}not-found{% else %}found-row{% endif %}">
+                <td>{{ row.order_date }}</td>
+                <td class="col-project">{{ row.project_link }}</td>
+                <td class="col-anchor">{{ row.anchor }}</td>
+                <td class="col-d">{{ row.col_d }}</td>
+                <td class="col-target-url"><a href="{{ row.target_url }}" target="_blank">{{ row.target_url }}</a></td>
+                <td>{{ row.placement_date }}</td>
+                <td class="col-type">{{ row.link_type }}</td>
+                <td>{{ row.status }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="buttons-panel">
+        <button class="action-btn copy-bad-btn" onclick="copyBad()">Скопировать ненайденные (B, C, D ➔ G)</button>
+        <button class="action-btn copy-good-btn" onclick="copyGood()">Скопировать удачные ссылки</button>
+        <a href="/" class="action-btn clear-btn">Очистить статистику</a>
+    </div>
+
+    <script>
+        function copyToClipboard(text, successMessage) {
+            if (!text) {
+                alert('Нет данных для копирования');
+                return;
+            }
+            navigator.clipboard.writeText(text).then(() => {
+                alert(successMessage);
+            }).catch(err => {
+                console.error('Ошибка при копировании: ', err);
+                alert('Не удалось скопировать текст.');
+            });
+        }
+
+        function copyBad() {
+            const rows = document.querySelectorAll('#resultsTable tbody tr.not-found');
+            let textToCopy = '';
+            
+            rows.forEach(row => {
+                const project = row.querySelector('.col-project').innerText.trim();
+                const anchor = row.querySelector('.col-anchor').innerText.trim();
+                const colD = row.querySelector('.col-d').innerText.trim();
+                const type = row.querySelector('.col-type').innerText.trim();
+                
+                textToCopy += `${project}\t${anchor}\t${colD}\t\t\t${type}\n`;
+            });
+
+            copyToClipboard(textToCopy, `Скопировано ${rows.length} строк (Ненайденные)`);
+        }
+
+        function copyGood() {
+            const rows = document.querySelectorAll('#resultsTable tbody tr.found-row');
+            let textToCopy = '';
+            
+            rows.forEach(row => {
+                const targetUrl = row.querySelector('.col-target-url').innerText.trim();
+                textToCopy += `${targetUrl}\n`;
+            });
+
+            copyToClipboard(textToCopy, `Скопировано ${rows.length} ссылок (Найденные)`);
+        }
+    </script>
+    {% endif %}
+
+    {% if not results %}
+    <script>
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if(e.target.files.length > 0) {
+                let fileName = e.target.files[0].name;
+                let uploadArea = document.getElementById('dropZone');
+                let cloudIcon = document.querySelector('.cloud-icon');
+                
+                document.querySelector('.upload-text').innerHTML = `Готов к проверке: <br><strong style="color: #2ecc71; font-size: 16px; display: inline-block; margin-top: 10px;">${fileName}</strong>`;
+                uploadArea.style.borderColor = '#2ecc71';
+                uploadArea.style.backgroundColor = 'rgba(46, 204, 113, 0.05)';
+                cloudIcon.style.fill = '#2ecc71';
+            }
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('fileInput');
+            const pasteInput = document.getElementById('pasteInput');
+
+            if (fileInput.files.length === 0 && pasteInput.value.trim() === '') {
+                e.preventDefault();
+                alert('Пожалуйста, загрузите Excel файл или вставьте строки текста в поле ниже.');
+                return;
+            }
+
+            document.getElementById('dropZone').style.display = 'none';
+            document.querySelector('.or-divider').style.display = 'none';
+            document.querySelector('.paste-area').style.display = 'none';
+            document.getElementById('submitBtn').style.display = 'none';
+            document.getElementById('proxyInfo').style.display = 'none';
+            
+            document.getElementById('loadingOverlay').style.display = 'block';
+        });
+    </script>
+    {% endif %}
+</div>
+
+</body>
+</html>
