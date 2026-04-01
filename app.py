@@ -85,10 +85,11 @@ def check_page_content(url, anchor, keys, proxy=None):
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://google.com/'
         }
         
-        # verify=False спасает от ошибок сертификата при проксировании
         response = requests.get(
             target_url, 
             headers=headers, 
@@ -96,6 +97,8 @@ def check_page_content(url, anchor, keys, proxy=None):
             timeout=30,
             verify=False 
         )
+        
+        # Если статус не 200 (ОК), генерируем HTTPError
         response.raise_for_status()
         
         page_text = response.text.lower()
@@ -113,16 +116,24 @@ def check_page_content(url, anchor, keys, proxy=None):
         else:
             return False, "Не найдено"
             
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        if status == 403:
+            return False, "Блок защиты (Ош. 403)"
+        elif status == 404:
+            return False, "Страница не найдена (404)"
+        elif status == 429:
+            return False, "Капча / Лимит (Ош. 429)"
+        elif status >= 500:
+            return False, f"Сайт лежит (Ош. {status})"
+        return False, f"HTTP Ошибка {status}"
+        
     except requests.exceptions.ProxyError:
-        print(f"Proxy Error: Не удалось подключиться к прокси для {target_url}", flush=True)
         return False, "Ошибка прокси"
     except requests.exceptions.Timeout:
-        print(f"Timeout: Долгий ответ от {target_url}", flush=True)
         return False, "Долго отвечает"
     except requests.RequestException as e:
-        error_name = type(e).__name__
-        print(f"Request Error [{error_name}] on {target_url}: {str(e)}", flush=True)
-        return False, f"Ошибка: {error_name}"
+        return False, "Ошибка подключения"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
