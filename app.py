@@ -1,11 +1,13 @@
 import os
 import sys
 import random
-import threading
-import webbrowser
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for
 import pandas as pd
 import requests
+import urllib3
+
+# Отключаем предупреждения об SSL (полезно при работе через серверные прокси)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def get_base_path():
     if getattr(sys, 'frozen', False):
@@ -27,11 +29,9 @@ def serve_gif():
 def load_proxies():
     proxies = []
     
-    # 1. Сначала проверяем переменные окружения (для серверов типа Render)
-    # Предполагаем, что прокси будут записаны через запятую или с новой строки
+    # Сначала проверяем переменные окружения Render
     env_proxies = os.environ.get('PROXY_LIST')
     if env_proxies:
-        # Разбиваем строку по запятым или пробелам/переносам
         lines = env_proxies.replace(',', '\n').replace(';', '\n').split('\n')
         for line in lines:
             line = line.strip()
@@ -43,11 +43,10 @@ def load_proxies():
                 proxy_url = f"http://{login}:{password}@{ip}:{port}"
                 proxies.append(proxy_url)
         
-        # Если загрузили из окружения, возвращаем их и игнорируем текстовый файл
         if proxies:
             return proxies
 
-    # 2. Если мы запускаем локально, читаем из файла proxy.txt
+    # Локальный fallback
     filepath = os.path.join(get_exe_dir(), 'proxy.txt')
     if os.path.exists(filepath):
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -67,6 +66,11 @@ def check_page_content(url, anchor, keys, proxy=None):
     if pd.isna(url) or str(url).strip() == '':
         return False, "Пустой URL"
     
+    target_url = str(url).strip()
+    # Автоподстановка протокола, если его нет
+    if not target_url.startswith('http://') and not target_url.startswith('https://'):
+        target_url = 'https://' + target_url
+    
     anchor_valid = pd.notna(anchor) and str(anchor).strip() != ''
     keys_valid = pd.notna(keys) and str(keys).strip() != ''
     
@@ -80,13 +84,17 @@ def check_page_content(url, anchor, keys, proxy=None):
 
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
         }
+        
+        # verify=False спасает от ошибок сертификата при проксировании
         response = requests.get(
-            str(url).strip(), 
+            target_url, 
             headers=headers, 
             proxies=proxies_dict, 
-            timeout=15
+            timeout=30,
+            verify=False 
         )
         response.raise_for_status()
         
@@ -100,14 +108,21 @@ def check_page_content(url, anchor, keys, proxy=None):
         if keys_valid:
             keys_found = str(keys).strip().lower() in page_text
 
-        # Если найдено либо то, либо другое (или оба)
         if anchor_found or keys_found:
             return True, "Найдено"
         else:
             return False, "Не найдено"
             
+    except requests.exceptions.ProxyError:
+        print(f"Proxy Error: Не удалось подключиться к прокси для {target_url}", flush=True)
+        return False, "Ошибка прокси"
+    except requests.exceptions.Timeout:
+        print(f"Timeout: Долгий ответ от {target_url}", flush=True)
+        return False, "Долго отвечает"
     except requests.RequestException as e:
-        return False, "Ошибка доступа"
+        error_name = type(e).__name__
+        print(f"Request Error [{error_name}] on {target_url}: {str(e)}", flush=True)
+        return False, f"Ошибка: {error_name}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -156,7 +171,6 @@ def index():
 
                 current_proxy = random.choice(proxies_list) if proxies_list else None
                 
-                # Теперь функция возвращает только один статус
                 is_found, status_msg = check_page_content(
                     target_url, anchor, col_d, current_proxy
                 )
@@ -175,9 +189,11 @@ def index():
                 
     return render_template('index.html', results=results, proxy_count=len(proxies_list), filename=filename)
 
-def open_browser():
-    webbrowser.open_new('http://127.0.0.1:5000/')
+# Маршрут для починки кнопки очистки
+@app.route('/reset')
+def reset():
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    threading.Timer(1.5, open_browser).start()
-    app.run(port=5000, debug=False)
+    # Оставлено только для локальных тестов. Gunicorn на Render игнорирует этот блок.
+    app.run(host='0.0.0.0', port=5000, debug=False)
