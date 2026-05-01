@@ -161,8 +161,12 @@
             margin-top: 15px; 
         }
 
+        /* ── Loading overlay ── */
+
         .loading-overlay {
             display: none;
+            flex-direction: column;
+            align-items: center;
             text-align: center;
             margin-top: 20px;
             animation: fadeIn 0.5s;
@@ -174,17 +178,89 @@
             font-weight: 600;
         }
 
+        /* GIF обёртка — фиксированный размер, чтобы при переключении ничего не прыгало */
+        .media-box {
+            width: 350px;
+            max-width: 100%;
+        }
+
         .cat-gif {
-            max-width: 350px;
             width: 100%;
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: block;
         }
+
+        /* Полупрозрачная кнопка под гифкой/логами */
+        .view-toggle-btn {
+            margin-top: 14px;
+            background: rgba(255,255,255,0.07);
+            color: rgba(255,255,255,0.45);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 6px;
+            padding: 7px 20px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            letter-spacing: 0.3px;
+        }
+
+        .view-toggle-btn:hover {
+            background: rgba(255,255,255,0.12);
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* ── Лог-панель ── */
+
+        .log-box {
+            display: none;
+            width: 350px;
+            max-width: 100%;
+            background: rgba(0,0,0,0.35);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .log-status {
+            padding: 8px 14px;
+            font-size: 11px;
+            color: rgba(255,255,255,0.25);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            justify-content: space-between;
+            font-family: monospace;
+        }
+
+        .log-body {
+            height: 210px;
+            overflow-y: auto;
+            padding: 10px 14px;
+            font-family: monospace;
+            font-size: 11.5px;
+            line-height: 1.8;
+        }
+
+        .log-body::-webkit-scrollbar { width: 3px; }
+        .log-body::-webkit-scrollbar-track { background: transparent; }
+        .log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+        .log-line { display: flex; gap: 10px; }
+        .log-ts  { color: rgba(255,255,255,0.18); flex-shrink: 0; }
+        .log-msg { color: rgba(255,255,255,0.45); word-break: break-all; }
+        .log-msg.ok    { color: #6fcf97; }
+        .log-msg.warn  { color: #f0c060; }
+        .log-msg.error { color: #e57373; }
+        .log-msg.done  { color: rgba(255,255,255,0.85); }
 
         @keyframes fadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
         }
+
+        /* ── Results ── */
 
         .file-processed-info {
             text-align: center;
@@ -286,7 +362,23 @@
 
         <div class="loading-overlay" id="loadingOverlay">
             <h3>Проверяем ссылки, пожалуйста подождите...</h3>
-            <img src="/fadding-cat.gif" alt="Проверка идет..." class="cat-gif">
+
+            <!-- GIF -->
+            <div class="media-box" id="gifPanel">
+                <img src="/fadding-cat.gif" alt="Проверка идет..." class="cat-gif">
+            </div>
+
+            <!-- Логи -->
+            <div class="log-box" id="logPanel">
+                <div class="log-status">
+                    <span id="logStatusText">ожидание...</span>
+                    <span id="logCount">0</span>
+                </div>
+                <div class="log-body" id="logBody"></div>
+            </div>
+
+            <!-- Полупрозрачная кнопка-переключатель -->
+            <button class="view-toggle-btn" id="viewToggleBtn" onclick="toggleView()">Показать логи</button>
         </div>
 
         <div class="proxy-info" id="proxyInfo">
@@ -337,43 +429,31 @@
 
     <script>
         function copyToClipboard(text, successMessage) {
-            if (!text) {
-                alert('Нет данных для копирования');
-                return;
-            }
+            if (!text) { alert('Нет данных для копирования'); return; }
             navigator.clipboard.writeText(text).then(() => {
                 alert(successMessage);
-            }).catch(err => {
-                console.error('Ошибка при копировании: ', err);
-                alert('Не удалось скопировать текст.');
-            });
+            }).catch(() => alert('Не удалось скопировать текст.'));
         }
 
         function copyBad() {
             const rows = document.querySelectorAll('#resultsTable tbody tr.not-found');
             let textToCopy = '';
-            
             rows.forEach(row => {
                 const project = row.querySelector('.col-project').innerText.trim();
-                const anchor = row.querySelector('.col-anchor').innerText.trim();
-                const colD = row.querySelector('.col-d').innerText.trim();
-                const type = row.querySelector('.col-type').innerText.trim();
-                
+                const anchor  = row.querySelector('.col-anchor').innerText.trim();
+                const colD    = row.querySelector('.col-d').innerText.trim();
+                const type    = row.querySelector('.col-type').innerText.trim();
                 textToCopy += `${project}\t${anchor}\t${colD}\t\t\t${type}\n`;
             });
-
             copyToClipboard(textToCopy, `Скопировано ${rows.length} строк (Ненайденные)`);
         }
 
         function copyGood() {
             const rows = document.querySelectorAll('#resultsTable tbody tr.found-row');
             let textToCopy = '';
-            
             rows.forEach(row => {
-                const targetUrl = row.querySelector('.col-target-url').innerText.trim();
-                textToCopy += `${targetUrl}\n`;
+                textToCopy += row.querySelector('.col-target-url').innerText.trim() + '\n';
             });
-
             copyToClipboard(textToCopy, `Скопировано ${rows.length} ссылок (Найденные)`);
         }
     </script>
@@ -382,11 +462,10 @@
     {% if not results %}
     <script>
         document.getElementById('fileInput').addEventListener('change', function(e) {
-            if(e.target.files.length > 0) {
+            if (e.target.files.length > 0) {
                 let fileName = e.target.files[0].name;
                 let uploadArea = document.getElementById('dropZone');
-                let cloudIcon = document.querySelector('.cloud-icon');
-                
+                let cloudIcon  = document.querySelector('.cloud-icon');
                 document.querySelector('.upload-text').innerHTML = `Готов к проверке: <br><strong style="color: #2ecc71; font-size: 16px; display: inline-block; margin-top: 10px;">${fileName}</strong>`;
                 uploadArea.style.borderColor = '#2ecc71';
                 uploadArea.style.backgroundColor = 'rgba(46, 204, 113, 0.05)';
@@ -395,7 +474,7 @@
         });
 
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('fileInput');
+            const fileInput  = document.getElementById('fileInput');
             const pasteInput = document.getElementById('pasteInput');
 
             if (fileInput.files.length === 0 && pasteInput.value.trim() === '') {
@@ -404,14 +483,86 @@
                 return;
             }
 
-            document.getElementById('dropZone').style.display = 'none';
-            document.querySelector('.or-divider').style.display = 'none';
-            document.querySelector('.paste-area').style.display = 'none';
-            document.getElementById('submitBtn').style.display = 'none';
-            document.getElementById('proxyInfo').style.display = 'none';
-            
-            document.getElementById('loadingOverlay').style.display = 'block';
+            document.getElementById('dropZone').style.display        = 'none';
+            document.querySelector('.or-divider').style.display       = 'none';
+            document.querySelector('.paste-area').style.display       = 'none';
+            document.getElementById('submitBtn').style.display        = 'none';
+            document.getElementById('proxyInfo').style.display        = 'none';
+
+            document.getElementById('loadingOverlay').style.display   = 'flex';
+
+            startPolling();
         });
+
+        /* ── Переключение GIF / Логи ── */
+
+        let showingLogs = false;
+
+        function toggleView() {
+            const gif = document.getElementById('gifPanel');
+            const log = document.getElementById('logPanel');
+            const btn = document.getElementById('viewToggleBtn');
+            showingLogs = !showingLogs;
+            if (showingLogs) {
+                gif.style.display = 'none';
+                log.style.display = 'block';
+                btn.textContent   = 'Вернуться к гифке';
+                const lb = document.getElementById('logBody');
+                lb.scrollTop = lb.scrollHeight;
+            } else {
+                gif.style.display = 'block';
+                log.style.display = 'none';
+                btn.textContent   = 'Показать логи';
+            }
+        }
+
+        /* ── Поллинг логов ── */
+
+        let lastLogId = 0;
+        let pollTimer = null;
+
+        const LEVEL_CLS = { OK: 'ok', WARN: 'warn', ERROR: 'error', DONE: 'done' };
+
+        function appendLogs(messages) {
+            const body   = document.getElementById('logBody');
+            const count  = document.getElementById('logCount');
+            const status = document.getElementById('logStatusText');
+            let   cnt    = parseInt(count.textContent) || 0;
+            const atBottom = body.scrollHeight - body.clientHeight - body.scrollTop < 40;
+
+            messages.forEach(m => {
+                const lvl = (m.level || 'INFO').toUpperCase();
+                const cls = LEVEL_CLS[lvl] || '';
+                const div = document.createElement('div');
+                div.className = 'log-line';
+                div.innerHTML =
+                    `<span class="log-ts">${m.ts}</span>` +
+                    `<span class="log-msg ${cls}">${esc(m.msg)}</span>`;
+                body.appendChild(div);
+                cnt++;
+                lastLogId = Math.max(lastLogId, m.id);
+                status.textContent = m.msg.length > 50 ? m.msg.slice(0, 50) + '…' : m.msg;
+            });
+
+            count.textContent = cnt;
+            if (showingLogs && atBottom) body.scrollTop = body.scrollHeight;
+        }
+
+        function esc(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function startPolling() {
+            pollTimer = setInterval(async () => {
+                try {
+                    const r    = await fetch('/get-logs?since=' + lastLogId);
+                    const data = await r.json();
+                    if (data.messages && data.messages.length > 0) appendLogs(data.messages);
+                } catch (_) {
+                    clearInterval(pollTimer);
+                }
+            }, 600);
+        }
     </script>
     {% endif %}
 </div>

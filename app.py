@@ -4,8 +4,9 @@ import re
 import itertools
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for, jsonify
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -44,6 +45,47 @@ app = Flask(__name__, template_folder=os.path.join(base_dir, 'templates'))
 @app.route('/fadding-cat.gif')
 def serve_gif():
     return send_from_directory(base_dir, 'fadding-cat.gif')
+
+
+# ---------------------------------------------------------------------------
+# Система логов
+# ---------------------------------------------------------------------------
+
+_log_messages = []
+_log_lock = threading.Lock()
+_log_id_counter = 0
+
+
+def clear_logs():
+    global _log_messages, _log_id_counter
+    with _log_lock:
+        _log_messages = []
+        _log_id_counter = 0
+
+
+def add_log(message, level='INFO'):
+    """Добавляет запись в глобальный лог (потокобезопасно)."""
+    global _log_id_counter
+    ts = datetime.now().strftime('%H:%M:%S')
+    with _log_lock:
+        _log_id_counter += 1
+        entry = {
+            'id':    _log_id_counter,
+            'ts':    ts,
+            'level': level,
+            'msg':   message,
+        }
+        _log_messages.append(entry)
+
+
+@app.route('/get-logs')
+def get_logs():
+    """Возвращает логи начиная с указанного id (для поллинга с фронта)."""
+    since = int(request.args.get('since', 0))
+    with _log_lock:
+        new_msgs = [m for m in _log_messages if m['id'] > since]
+        total = _log_id_counter
+    return jsonify({'messages': new_msgs, 'total': total})
 
 
 # ---------------------------------------------------------------------------
@@ -138,13 +180,13 @@ def extract_all_text(soup):
     """
     parts = []
 
-    # 1. Видимый текст БЕЗ разделителя (слова внутри тегов не разбиваются пробелом)
+    # 1. Видимый текст БЕЗ разделителя
     parts.append(soup.get_text(separator=''))
 
-    # 2. Видимый текст С разделителем (для фраз из разных тегов)
+    # 2. Видимый текст С разделителем
     parts.append(soup.get_text(separator=' '))
 
-    # 3. alt у изображений
+    # 3. Атрибуты тегов
     for tag in soup.find_all(True):
         for attr in ('alt', 'title', 'placeholder', 'aria-label'):
             val = tag.get(attr, '')
@@ -167,8 +209,6 @@ def extract_all_text(soup):
 def keyword_in_texts(keyword, text_variants):
     """
     Ищет нормализованный keyword в списке нормализованных текстов.
-    Поддерживает как точное вхождение, так и вхождение без учёта
-    лишних внутренних пробелов (на случай переноса строки внутри тега).
     """
     norm_kw = normalize_text(keyword)
     if not norm_kw:
@@ -178,9 +218,6 @@ def keyword_in_texts(keyword, text_variants):
         if norm_kw in text:
             return True
 
-    # Дополнительная проверка: схлопываем пробелы в keyword до одного
-    # и ищем по частям (каждое слово должно быть рядом).
-    # Это помогает, когда текст разбит тегами: "ключ<span></span>евое слово"
     words = norm_kw.split()
     if len(words) > 1:
         pattern = r'\s{0,5}'.join(re.escape(w) for w in words)
@@ -213,29 +250,20 @@ HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-# Только ОЧЕНЬ специфичные маркеры — слова которые однозначно означают блокировку.
-# НЕ добавлять сюда 'cloudflare', 'access denied', 'please wait' —
-# они встречаются на обычных страницах в футерах и текстах.
 CAPTCHA_MARKERS = [
-    'just a moment',        # Cloudflare challenge
-    'checking your browser', # Cloudflare challenge
-    'ddos-guard',           # DDoS-Guard challenge
-    'ddos guard',           # DDoS-Guard challenge (с пробелом)
+    'just a moment',
+    'checking your browser',
+    'ddos-guard',
+    'ddos guard',
 ]
 
 
 def _fetch_page(target_url, proxies_dict):
     """
     Выполняет HTTP-запрос и возвращает (html_text, None) или (None, error_str).
-
-    Приоритет: curl_cffi (имитация Chrome TLS → обход Cloudflare/DDoS-Guard)
-    Fallback:  стандартный requests (если curl_cffi не установлен).
     """
     try:
         if CURL_CFFI_AVAILABLE:
-            # impersonate="chrome124" — полная имитация TLS-fingerprint Chrome 124:
-            # правильные cipher suites, ALPN, HTTP/2 settings, заголовки.
-            # Именно это заставляет Cloudflare думать, что пришёл реальный браузер.
             session = cffi_requests.Session(impersonate="chrome124")
             response = session.get(
                 target_url,
@@ -258,8 +286,6 @@ def _fetch_page(target_url, proxies_dict):
 
         response.raise_for_status()
 
-        # Определяем кодировку: requests/curl_cffi иногда ставят iso-8859-1 по умолчанию.
-        # apparent_encoding точнее для кириллицы и нестандартных сайтов.
         encoding = getattr(response, 'encoding', None) or ''
         if not encoding or encoding.lower() in ('iso-8859-1', 'latin-1'):
             response.encoding = response.apparent_encoding or 'utf-8'
@@ -269,7 +295,6 @@ def _fetch_page(target_url, proxies_dict):
     except Exception as e:
         err_str = str(e).lower()
 
-        # Пробуем достать HTTP-статус из ответа внутри исключения
         resp = getattr(e, 'response', None)
         if resp is not None:
             try:
@@ -286,7 +311,6 @@ def _fetch_page(target_url, proxies_dict):
             except Exception:
                 pass
 
-        # Классификация по тексту ошибки (работает и для requests, и для curl_cffi)
         if any(kw in err_str for kw in ('proxy', 'tunnel connection', 'cannot connect to proxy')):
             return None, '__PROXY_ERROR__'
         if any(kw in err_str for kw in ('timeout', 'timed out', 'time out')):
@@ -318,45 +342,45 @@ def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
     if not anchor_valid and not keys_valid:
         return False, 'Пустые значения (C и D)'
 
-    # Максимум попыток при ошибке прокси
     max_proxy_retries = min(3, len(proxies_list)) if proxies_list else 0
     current_proxy = proxy
-    used_proxy_label = current_proxy.split('@')[-1] if current_proxy else 'Без прокси'
+    proxy_label = current_proxy.split('@')[-1] if current_proxy else 'без прокси'
+
+    add_log(f'Запрос: {target_url} [{proxy_label}]')
 
     for attempt in range(max_proxy_retries + 1):
         proxies_dict = {'http': current_proxy, 'https': current_proxy} if current_proxy else None
         html, error = _fetch_page(target_url, proxies_dict)
 
         if error == '__PROXY_ERROR__':
+            add_log(f'Ошибка прокси {proxy_label}, переключаем...', 'WARN')
             if proxies_list and attempt < max_proxy_retries:
-                # Берём следующий прокси из общего пула и повторяем
                 current_proxy = get_next_proxy(proxies_list)
-                used_proxy_label = current_proxy.split('@')[-1] if current_proxy else 'Без прокси'
+                proxy_label = current_proxy.split('@')[-1] if current_proxy else 'без прокси'
                 continue
             else:
+                add_log(f'Все попытки прокси исчерпаны: {target_url}', 'ERROR')
                 return False, 'Ошибка прокси (все попытки исчерпаны)'
 
         if error:
+            add_log(f'Ошибка загрузки [{target_url}]: {error}', 'ERROR')
             return False, error
 
-        # HTML получен успешно — разбираем
         break
     else:
         return False, 'Ошибка прокси (все попытки исчерпаны)'
 
     soup = BeautifulSoup(html, 'html.parser')
 
-    # Убираем теги, которые не несут видимого текста
     for tag in soup(['script', 'style', 'head']):
         tag.decompose()
 
-    # Проверка капчи / блокировки по первым 5 000 символов
     quick_text = normalize_text(soup.get_text(separator=' ')[:5000])
     for marker in CAPTCHA_MARKERS:
         if normalize_text(marker) in quick_text:
+            add_log(f'Обнаружена защита на {target_url}: {marker}', 'WARN')
             return False, f'Скрытая защита: {marker}'
 
-    # Полный набор текстовых вариантов страницы
     text_variants = extract_all_text(soup)
 
     anchor_found = anchor_valid and keyword_in_texts(anchor, text_variants)
@@ -368,8 +392,11 @@ def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
             found_what.append('анкор')
         if keys_found:
             found_what.append('ключ')
-        return True, 'Найдено (' + ', '.join(found_what) + ')'
+        status = 'Найдено (' + ', '.join(found_what) + ')'
+        add_log(f'✓ {status}: {target_url}', 'OK')
+        return True, status
 
+    add_log(f'✗ Не найдено: {target_url}')
     return False, 'Не найдено'
 
 
@@ -433,6 +460,9 @@ def index():
 
         df = None
 
+        # Сбрасываем логи перед новым запуском
+        clear_logs()
+
         if raw_text:
             filename = 'Вставленный текст (буфер обмена)'
             rows = []
@@ -463,14 +493,15 @@ def index():
                 valid_rows.append((index, row))
 
             if valid_rows:
+                proxy_info = f'{len(proxies_list)} прокси' if proxies_list else 'без прокси'
+                add_log(f'Начало проверки: {len(valid_rows)} строк, {proxy_info}')
+
                 # Инициализируем round-robin один раз перед пулом
                 init_proxy_cycle(proxies_list)
 
-                # Кол-во потоков: если есть прокси — по одному потоку на прокси
-                # (но не более 20 и не менее 1)
                 num_workers = max(1, min(len(proxies_list) if proxies_list else 4, 20))
+                add_log(f'Запущено потоков: {num_workers}')
 
-                # Словарь для сборки результатов по исходному порядку
                 ordered_results = {}
 
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -478,10 +509,16 @@ def index():
                         executor.submit(process_row, idx, row, proxies_list): idx
                         for idx, row in valid_rows
                     }
+                    completed = 0
                     for future in as_completed(futures):
                         try:
                             row_index, result = future.result()
                             ordered_results[row_index] = result
+                            completed += 1
+                            add_log(
+                                f'Обработано {completed}/{len(valid_rows)}'
+                                f' — {result["target_url"][:60]}'
+                            )
                         except Exception as e:
                             orig_idx = futures[future]
                             ordered_results[orig_idx] = {
@@ -492,9 +529,17 @@ def index():
                                 'status': f'Ошибка потока: {str(e)[:80]}',
                                 'proxy_used': '—',
                             }
+                            add_log(f'Ошибка потока: {str(e)[:80]}', 'ERROR')
 
                 # Восстанавливаем исходный порядок строк
                 results = [ordered_results[idx] for idx, _ in valid_rows if idx in ordered_results]
+
+                found_count = sum(1 for r in results if r['found'])
+                add_log(
+                    f'Готово! Найдено: {found_count}/{len(results)} '
+                    f'| Не найдено: {len(results) - found_count}',
+                    'DONE'
+                )
 
     return render_template(
         'index.html',
