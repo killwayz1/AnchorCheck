@@ -1,1 +1,10 @@
-154.195.120.204:64742:3aWpTfhv:EwyA2jAm
+82.22.224.31:7363:etzmzwwd:x6npfq8xch36
+147.124.198.213:6072:etzmzwwd:x6npfq8xch36
+154.73.250.56:5957:etzmzwwd:x6npfq8xch36
+173.211.8.41:6153:etzmzwwd:x6npfq8xch36
+198.23.128.15:5643:etzmzwwd:x6npfq8xch36
+191.101.188.104:6858:etzmzwwd:x6npfq8xch36
+94.176.212.33:6549:etzmzwwd:x6npfq8xch36
+172.121.235.130:8285:etzmzwwd:x6npfq8xch36
+45.38.67.149:7081:etzmzwwd:x6npfq8xch36
+45.56.175.58:5732:etzmzwwd:x6npfq8xch36
