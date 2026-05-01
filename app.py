@@ -7,11 +7,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
 import pandas as pd
-import requests
-import urllib3
 from bs4 import BeautifulSoup
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# curl_cffi имитирует TLS-fingerprint реального Chrome — обходит Cloudflare/DDoS-Guard.
+# Если не установлен — fallback на обычный requests.
+try:
+    from curl_cffi import requests as cffi_requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    import requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    CURL_CFFI_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -206,16 +213,96 @@ HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
+# Только ОЧЕНЬ специфичные маркеры — слова которые однозначно означают блокировку.
+# НЕ добавлять сюда 'cloudflare', 'access denied', 'please wait' —
+# они встречаются на обычных страницах в футерах и текстах.
 CAPTCHA_MARKERS = [
-    'just a moment', 'checking your browser', 'ddos-guard',
-    'ddos guard', 'cloudflare', 'please wait', 'enable javascript',
-    'access denied', 'robot or human', 'are you a robot',
+    'just a moment',        # Cloudflare challenge
+    'checking your browser', # Cloudflare challenge
+    'ddos-guard',           # DDoS-Guard challenge
+    'ddos guard',           # DDoS-Guard challenge (с пробелом)
 ]
 
 
-def check_page_content(url, anchor, keys, proxy=None):
+def _fetch_page(target_url, proxies_dict):
+    """
+    Выполняет HTTP-запрос и возвращает (html_text, None) или (None, error_str).
+
+    Приоритет: curl_cffi (имитация Chrome TLS → обход Cloudflare/DDoS-Guard)
+    Fallback:  стандартный requests (если curl_cffi не установлен).
+    """
+    try:
+        if CURL_CFFI_AVAILABLE:
+            # impersonate="chrome124" — полная имитация TLS-fingerprint Chrome 124:
+            # правильные cipher suites, ALPN, HTTP/2 settings, заголовки.
+            # Именно это заставляет Cloudflare думать, что пришёл реальный браузер.
+            session = cffi_requests.Session(impersonate="chrome124")
+            response = session.get(
+                target_url,
+                headers=HEADERS,
+                proxies=proxies_dict,
+                timeout=30,
+                verify=False,
+                allow_redirects=True,
+            )
+        else:
+            session = requests.Session()
+            response = session.get(
+                target_url,
+                headers=HEADERS,
+                proxies=proxies_dict,
+                timeout=30,
+                verify=False,
+                allow_redirects=True,
+            )
+
+        response.raise_for_status()
+
+        # Определяем кодировку: requests/curl_cffi иногда ставят iso-8859-1 по умолчанию.
+        # apparent_encoding точнее для кириллицы и нестандартных сайтов.
+        encoding = getattr(response, 'encoding', None) or ''
+        if not encoding or encoding.lower() in ('iso-8859-1', 'latin-1'):
+            response.encoding = response.apparent_encoding or 'utf-8'
+        html = response.text
+        return html, None
+
+    except Exception as e:
+        err_str = str(e).lower()
+
+        # Пробуем достать HTTP-статус из ответа внутри исключения
+        resp = getattr(e, 'response', None)
+        if resp is not None:
+            try:
+                status = resp.status_code
+                if status == 403:
+                    return None, 'Блок защиты (Ош. 403)'
+                if status == 404:
+                    return None, 'Страница не найдена (404)'
+                if status == 429:
+                    return None, 'Капча / Лимит (Ош. 429)'
+                if status >= 500:
+                    return None, f'Сайт лежит (Ош. {status})'
+                return None, f'HTTP Ошибка {status}'
+            except Exception:
+                pass
+
+        # Классификация по тексту ошибки (работает и для requests, и для curl_cffi)
+        if any(kw in err_str for kw in ('proxy', 'tunnel connection', 'cannot connect to proxy')):
+            return None, '__PROXY_ERROR__'
+        if any(kw in err_str for kw in ('timeout', 'timed out', 'time out')):
+            return None, 'Долго отвечает'
+        if any(kw in err_str for kw in ('ssl', 'certificate')):
+            return None, f'SSL ошибка: {str(e)[:60]}'
+        if any(kw in err_str for kw in ('connection', 'connect', 'name or service')):
+            return None, f'Ошибка подключения: {str(e)[:60]}'
+
+        return None, f'Ошибка: {str(e)[:80]}'
+
+
+def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
     """
     Загружает страницу и ищет anchor и/или keys в тексте.
+    При ошибке прокси автоматически переключается на следующий (до 3 попыток).
     Возвращает (bool, str).
     """
     if pd.isna(url) or str(url).strip() == '':
@@ -231,75 +318,59 @@ def check_page_content(url, anchor, keys, proxy=None):
     if not anchor_valid and not keys_valid:
         return False, 'Пустые значения (C и D)'
 
-    proxies_dict = {'http': proxy, 'https': proxy} if proxy else None
+    # Максимум попыток при ошибке прокси
+    max_proxy_retries = min(3, len(proxies_list)) if proxies_list else 0
+    current_proxy = proxy
+    used_proxy_label = current_proxy.split('@')[-1] if current_proxy else 'Без прокси'
 
-    try:
-        session = requests.Session()
-        response = session.get(
-            target_url,
-            headers=HEADERS,
-            proxies=proxies_dict,
-            timeout=30,
-            verify=False,
-            allow_redirects=True,
-        )
-        response.raise_for_status()
+    for attempt in range(max_proxy_retries + 1):
+        proxies_dict = {'http': current_proxy, 'https': current_proxy} if current_proxy else None
+        html, error = _fetch_page(target_url, proxies_dict)
 
-        # Явно определяем кодировку: сначала из заголовков, потом apparent
-        if response.encoding and response.encoding.lower() not in ('iso-8859-1', 'latin-1'):
-            html = response.text
-        else:
-            # requests часто ошибается с кодировкой — берём apparent
-            response.encoding = response.apparent_encoding or 'utf-8'
-            html = response.text
+        if error == '__PROXY_ERROR__':
+            if proxies_list and attempt < max_proxy_retries:
+                # Берём следующий прокси из общего пула и повторяем
+                current_proxy = get_next_proxy(proxies_list)
+                used_proxy_label = current_proxy.split('@')[-1] if current_proxy else 'Без прокси'
+                continue
+            else:
+                return False, 'Ошибка прокси (все попытки исчерпаны)'
 
-        soup = BeautifulSoup(html, 'html.parser')
+        if error:
+            return False, error
 
-        # Убираем теги, которые не несут видимого текста
-        for tag in soup(['script', 'style', 'head']):
-            tag.decompose()
+        # HTML получен успешно — разбираем
+        break
+    else:
+        return False, 'Ошибка прокси (все попытки исчерпаны)'
 
-        # Проверка капчи / блокировки (по первым 3 000 символов видимого текста)
-        quick_text = normalize_text(soup.get_text(separator=' ')[:3000])
-        for marker in CAPTCHA_MARKERS:
-            if normalize_text(marker) in quick_text:
-                return False, f'Защита / Капча ({marker[:20]})'
+    soup = BeautifulSoup(html, 'html.parser')
 
-        # Полный набор текстовых вариантов страницы
-        text_variants = extract_all_text(soup)
+    # Убираем теги, которые не несут видимого текста
+    for tag in soup(['script', 'style', 'head']):
+        tag.decompose()
 
-        anchor_found = anchor_valid and keyword_in_texts(anchor, text_variants)
-        keys_found   = keys_valid   and keyword_in_texts(keys,   text_variants)
+    # Проверка капчи / блокировки по первым 5 000 символов
+    quick_text = normalize_text(soup.get_text(separator=' ')[:5000])
+    for marker in CAPTCHA_MARKERS:
+        if normalize_text(marker) in quick_text:
+            return False, f'Скрытая защита: {marker}'
 
-        if anchor_found or keys_found:
-            found_what = []
-            if anchor_found:
-                found_what.append('анкор')
-            if keys_found:
-                found_what.append('ключ')
-            return True, 'Найдено (' + ', '.join(found_what) + ')'
+    # Полный набор текстовых вариантов страницы
+    text_variants = extract_all_text(soup)
 
-        return False, 'Не найдено'
+    anchor_found = anchor_valid and keyword_in_texts(anchor, text_variants)
+    keys_found   = keys_valid   and keyword_in_texts(keys,   text_variants)
 
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code
-        if status == 403:
-            return False, 'Блок защиты (Ош. 403)'
-        if status == 404:
-            return False, 'Страница не найдена (404)'
-        if status == 429:
-            return False, 'Капча / Лимит (Ош. 429)'
-        if status >= 500:
-            return False, f'Сайт лежит (Ош. {status})'
-        return False, f'HTTP Ошибка {status}'
-    except requests.exceptions.ProxyError:
-        return False, 'Ошибка прокси'
-    except requests.exceptions.Timeout:
-        return False, 'Долго отвечает'
-    except requests.RequestException as e:
-        return False, f'Ошибка подключения: {str(e)[:60]}'
-    except Exception as e:
-        return False, f'Неизвестная ошибка: {str(e)[:60]}'
+    if anchor_found or keys_found:
+        found_what = []
+        if anchor_found:
+            found_what.append('анкор')
+        if keys_found:
+            found_what.append('ключ')
+        return True, 'Найдено (' + ', '.join(found_what) + ')'
+
+    return False, 'Не найдено'
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +397,9 @@ def process_row(row_index, row_data, proxies_list):
     current_proxy = get_next_proxy(proxies_list)
 
     is_found, status_msg = check_page_content(
-        target_url, anchor, col_d, current_proxy
+        target_url, anchor, col_d,
+        proxy=current_proxy,
+        proxies_list=proxies_list,
     )
 
     result = {
