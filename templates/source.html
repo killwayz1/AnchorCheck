@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Исходный код — {{ url }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 13px;
+        }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            position: sticky;
+            top: 0;
+            background: #161b22;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #30363d;
+            z-index: 100;
+            flex-wrap: wrap;
+        }
+
+        .toolbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .toolbar-title {
+            color: #58a6ff;
+            font-weight: 700;
+            font-size: 14px;
+            font-family: 'Montserrat', sans-serif;
+            white-space: nowrap;
+        }
+
+        .toolbar-url {
+            color: #8b949e;
+            font-size: 11px;
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: 'Montserrat', sans-serif;
+            flex-shrink: 1;
+        }
+
+        .search-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 14px;
+            color: #c9d1d9;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            width: 380px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: #58a6ff;
+        }
+
+        .btn {
+            background: #238636;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background: #2ea043;
+        }
+
+        .btn-nav {
+            background: #1f6feb;
+        }
+
+        .btn-nav:hover {
+            background: #388bfd;
+        }
+
+        .match-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            white-space: nowrap;
+            min-width: 50px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .match-badge.idle {
+            background: rgba(255, 255, 255, 0.05);
+            color: #8b949e;
+        }
+
+        .match-badge.found {
+            background: rgba(111, 207, 151, 0.15);
+            color: #6fcf97;
+        }
+
+        .match-badge.missing {
+            background: rgba(229, 115, 115, 0.15);
+            color: #e57373;
+        }
+
+        /* ── Stats bar ── */
+        .stats-bar {
+            background: #0d1117;
+            border-bottom: 1px solid #21262d;
+            padding: 6px 20px;
+            font-size: 11px;
+            color: #8b949e;
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .stats-bar strong {
+            color: #c9d1d9;
+        }
+
+        /* ── Source container ── */
+        #sourceContainer {
+            padding: 20px 24px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.8;
+            font-size: 13px;
+            tab-size: 2;
+            min-height: calc(100vh - 120px);
+        }
+
+        /* Highlights */
+        mark.hl {
+            background: #f0c800;
+            color: #000;
+            border-radius: 2px;
+            padding: 1px 2px;
+        }
+
+        mark.hl-current {
+            background: #ff6b35;
+            color: #fff;
+            border-radius: 2px;
+            padding: 1px 2px;
+            outline: 2px solid #ffaa80;
+            outline-offset: 1px;
+        }
+
+        /* ── Error state ── */
+        .error-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 40px;
+            text-align: center;
+            gap: 12px;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        .error-icon {
+            font-size: 52px;
+        }
+
+        .error-title {
+            color: #e57373;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .error-msg {
+            color: #8b949e;
+            font-size: 13px;
+        }
+
+        .error-url {
+            color: #58a6ff;
+            font-size: 12px;
+        }
+
+        /* ── Loading ── */
+        #loadingMsg {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 24px;
+            font-family: 'Montserrat', sans-serif;
+            color: #8b949e;
+            font-size: 13px;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #30363d;
+            border-top-color: #58a6ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <div class="toolbar-brand">
+            <span class="toolbar-title">📄 Исходный код</span>
+        </div>
+        <span class="toolbar-url" title="{{ url }}">{{ url }}</span>
+
+        <div class="search-group">
+            <input class="search-input" type="text" id="searchInput" value="{{ keyword | e }}"
+                placeholder="Поиск по исходному коду...">
+            <button class="btn" onclick="doSearch()">Найти</button>
+            <button class="btn btn-nav" onclick="prevMatch()" title="Предыдущее (Shift+Enter)">◀ Пред</button>
+            <button class="btn btn-nav" onclick="nextMatch()" title="Следующее (Enter)">След ▶</button>
+            <span class="match-badge idle" id="matchBadge">—</span>
+        </div>
+    </div>
+
+    {% if error %}
+    <!-- Error state -->
+    <div class="error-box">
+        <div class="error-icon">⚠️</div>
+        <div class="error-title">Не удалось загрузить страницу</div>
+        <div class="error-msg">{{ error }}</div>
+        <div class="error-url">{{ url }}</div>
+    </div>
+
+    {% else %}
+    <!-- Stats bar -->
+    <div class="stats-bar">
+        <span>Размер: <strong>{{ size_kb }} KB</strong></span>
+        <span>URL: <strong>{{ url }}</strong></span>
+        <span id="occurrencesInfo" style="margin-left:auto;"></span>
+    </div>
+
+    <!-- Source container (populated by JS) -->
+    <div id="loadingMsg">
+        <div class="spinner"></div>
+        Загрузка исходного кода...
+    </div>
+    <div id="sourceContainer" style="display:none;"></div>
+
+    <script>
+        // Исходный HTML от сервера (безопасно сериализован через json.dumps)
+        const rawSource = {{ source_json | safe }};
+
+        let positions = [];
+        let currentIdx = 0;
+        let lastQuery = '';
+
+        /* ── Экранирование HTML через DOM (самый надёжный способ) ── */
+        function escHtml(str) {
+            const d = document.createElement('div');
+            d.appendChild(document.createTextNode(str));
+            return d.innerHTML;
+        }
+
+        /* ── Строим innerHTML с подсветкой ── */
+        function buildHTML(query) {
+            const container = document.getElementById('sourceContainer');
+
+            if (!query) {
+                container.innerHTML = escHtml(rawSource);
+                positions = [];
+                return;
+            }
+
+            const lower = rawSource.toLowerCase();
+            const lowerQ = query.toLowerCase();
+            const qLen = query.length;
+
+            // Собираем позиции вхождений
+            positions = [];
+            let idx = 0;
+            while ((idx = lower.indexOf(lowerQ, idx)) !== -1) {
+                positions.push(idx);
+                idx += qLen;
+            }
+
+            // Строим HTML с mark-тегами
+            let html = '';
+            let last = 0;
+            positions.forEach((pos, i) => {
+                html += escHtml(rawSource.slice(last, pos));
+                const cls = (i === currentIdx) ? 'hl hl-current' : 'hl';
+                html += `<mark class="${cls}" id="m${i}">${escHtml(rawSource.slice(pos, pos + qLen))}</mark>`;
+                last = pos + qLen;
+            });
+            html += escHtml(rawSource.slice(last));
+            container.innerHTML = html;
+        }
+
+        /* ── Обновляем бейдж ── */
+        function updateBadge() {
+            const el = document.getElementById('matchBadge');
+            const oc = document.getElementById('occurrencesInfo');
+
+            if (!lastQuery) {
+                el.textContent = '—';
+                el.className = 'match-badge idle';
+                oc.textContent = '';
+            } else if (positions.length === 0) {
+                el.textContent = 'Не найдено';
+                el.className = 'match-badge missing';
+                oc.textContent = 'Совпадений: 0';
+            } else {
+                el.textContent = `${currentIdx + 1} / ${positions.length}`;
+                el.className = 'match-badge found';
+                oc.textContent = `Всего совпадений: ${positions.length}`;
+            }
+        }
+
+        /* ── Скроллим к текущему ── */
+        function scrollToCurrent() {
+            const el = document.getElementById('m' + currentIdx);
+            if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+
+        /* ── Публичные функции ── */
+        function doSearch() {
+            const query = document.getElementById('searchInput').value;
+            lastQuery = query;
+            currentIdx = 0;
+            buildHTML(query);
+            updateBadge();
+            if (positions.length > 0) scrollToCurrent();
+        }
+
+        function nextMatch() {
+            if (positions.length === 0) { doSearch(); return; }
+            currentIdx = (currentIdx + 1) % positions.length;
+            buildHTML(lastQuery);
+            updateBadge();
+            scrollToCurrent();
+        }
+
+        function prevMatch() {
+            if (positions.length === 0) { doSearch(); return; }
+            currentIdx = (currentIdx - 1 + positions.length) % positions.length;
+            buildHTML(lastQuery);
+            updateBadge();
+            scrollToCurrent();
+        }
+
+        /* ── Клавиатурные шорткаты ── */
+        document.getElementById('searchInput').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) prevMatch();
+                else if (lastQuery === this.value && positions.length > 0) nextMatch();
+                else doSearch();
+            }
+        });
+
+        /* ── Инициализация при загрузке ── */
+        window.addEventListener('load', function () {
+            const loading = document.getElementById('loadingMsg');
+            const container = document.getElementById('sourceContainer');
+
+            // Рендерим исходник
+            const q = document.getElementById('searchInput').value.trim();
+            if (q) {
+                lastQuery = q;
+                buildHTML(q);
+                updateBadge();
+            } else {
+                container.innerHTML = escHtml(rawSource);
+            }
+
+            loading.style.display = 'none';
+            container.style.display = 'block';
+
+            if (positions.length > 0) {
+                setTimeout(scrollToCurrent, 100);
+            }
+        });
+    </script>
+    {% endif %}
+
+</body>
+
+</html>

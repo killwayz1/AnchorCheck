@@ -1,6 +1,9 @@
 import os
 import sys
 import re
+import json
+import gzip
+import zlib
 import itertools
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,7 +14,6 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 # curl_cffi имитирует TLS-fingerprint реального Chrome — обходит Cloudflare/DDoS-Guard.
-# Если не установлен — fallback на обычный requests.
 try:
     from curl_cffi import requests as cffi_requests
     CURL_CFFI_AVAILABLE = True
@@ -20,6 +22,13 @@ except ImportError:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     CURL_CFFI_AVAILABLE = False
+
+# Brotli-декомпрессия (опционально)
+try:
+    import brotli
+    BROTLI_AVAILABLE = True
+except ImportError:
+    BROTLI_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -64,23 +73,20 @@ def clear_logs():
 
 
 def add_log(message, level='INFO'):
-    """Добавляет запись в глобальный лог (потокобезопасно)."""
     global _log_id_counter
     ts = datetime.now().strftime('%H:%M:%S')
     with _log_lock:
         _log_id_counter += 1
-        entry = {
+        _log_messages.append({
             'id':    _log_id_counter,
             'ts':    ts,
             'level': level,
             'msg':   message,
-        }
-        _log_messages.append(entry)
+        })
 
 
 @app.route('/get-logs')
 def get_logs():
-    """Возвращает логи начиная с указанного id (для поллинга с фронта)."""
     since = int(request.args.get('since', 0))
     with _log_lock:
         new_msgs = [m for m in _log_messages if m['id'] > since]
@@ -93,7 +99,6 @@ def get_logs():
 # ---------------------------------------------------------------------------
 
 def parse_proxy_line(line):
-    """Парсит строку ip:port:login:password → URL прокси."""
     line = line.strip()
     if not line:
         return None
@@ -105,10 +110,6 @@ def parse_proxy_line(line):
 
 
 def load_proxies():
-    """
-    Собирает прокси из переменной окружения PROXY_LIST и файла proxy.txt.
-    Дубликаты исключаются.
-    """
     proxies = []
     seen = set()
 
@@ -131,20 +132,17 @@ def load_proxies():
     return proxies
 
 
-# Потокобезопасный round-robin
 _proxy_cycle = None
 _proxy_lock = threading.Lock()
 
 
 def init_proxy_cycle(proxies_list):
-    """Сбрасывает и инициализирует цикл прокси (вызывать перед пакетной обработкой)."""
     global _proxy_cycle
     with _proxy_lock:
         _proxy_cycle = itertools.cycle(proxies_list) if proxies_list else None
 
 
 def get_next_proxy(proxies_list):
-    """Потокобезопасно возвращает следующий прокси по round-robin."""
     global _proxy_cycle
     with _proxy_lock:
         if not proxies_list or _proxy_cycle is None:
@@ -153,83 +151,9 @@ def get_next_proxy(proxies_list):
 
 
 # ---------------------------------------------------------------------------
-# Нормализация текста
-# ---------------------------------------------------------------------------
-
-def normalize_text(text):
-    """
-    Нормализует текст для надёжного поиска:
-    - нижний регистр
-    - ё → е
-    - вся пунктуация → пробел
-    - схлопывание множественных пробелов
-    """
-    if pd.isna(text) or str(text).strip() == '':
-        return ''
-    text = str(text).lower()
-    text = text.replace('ё', 'е')
-    text = re.sub(r'[^\w\s]', ' ', text)
-    return re.sub(r'\s+', ' ', text).strip()
-
-
-def extract_all_text(soup):
-    """
-    Извлекает текст из всех возможных источников страницы:
-    видимый текст, alt, title, placeholder, meta[content], noscript.
-    Возвращает список нормализованных строк (каждая своя «версия»).
-    """
-    parts = []
-
-    # 1. Видимый текст БЕЗ разделителя
-    parts.append(soup.get_text(separator=''))
-
-    # 2. Видимый текст С разделителем
-    parts.append(soup.get_text(separator=' '))
-
-    # 3. Атрибуты тегов
-    for tag in soup.find_all(True):
-        for attr in ('alt', 'title', 'placeholder', 'aria-label'):
-            val = tag.get(attr, '')
-            if val:
-                parts.append(val)
-
-    # 4. meta content
-    for meta in soup.find_all('meta'):
-        content = meta.get('content', '')
-        if content:
-            parts.append(content)
-
-    # 5. noscript
-    for ns in soup.find_all('noscript'):
-        parts.append(ns.get_text(separator=' '))
-
-    return [normalize_text(p) for p in parts if p.strip()]
-
-
-def keyword_in_texts(keyword, text_variants):
-    """
-    Ищет нормализованный keyword в списке нормализованных текстов.
-    """
-    norm_kw = normalize_text(keyword)
-    if not norm_kw:
-        return False
-
-    for text in text_variants:
-        if norm_kw in text:
-            return True
-
-    words = norm_kw.split()
-    if len(words) > 1:
-        pattern = r'\s{0,5}'.join(re.escape(w) for w in words)
-        for text in text_variants:
-            if re.search(pattern, text):
-                return True
-
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Проверка страницы
+# HTTP-заголовки
+# НЕ включаем Accept-Encoding — пусть библиотека сама управляет сжатием,
+# иначе brotli-ответ может прийти нераспакованным (каша в байтах).
 # ---------------------------------------------------------------------------
 
 HEADERS = {
@@ -243,10 +167,9 @@ HEADERS = {
         'q=0.9,image/avif,image/webp,*/*;q=0.8'
     ),
     'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Referer': 'https://www.google.com/',
-    'DNT': '1',
-    'Connection': 'keep-alive',
+    'Referer':         'https://www.google.com/',
+    'DNT':             '1',
+    'Connection':      'keep-alive',
     'Upgrade-Insecure-Requests': '1',
 }
 
@@ -258,9 +181,122 @@ CAPTCHA_MARKERS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Надёжное декодирование ответа (декомпрессия + charset)
+# ---------------------------------------------------------------------------
+
+def _decompress_bytes(raw: bytes, content_encoding: str) -> bytes:
+    """
+    Явная декомпрессия на случай, если HTTP-библиотека не справилась сама.
+    Порядок: br → gzip → deflate → raw.
+    """
+    enc = (content_encoding or '').lower()
+
+    # Brotli
+    if 'br' in enc and BROTLI_AVAILABLE:
+        try:
+            return brotli.decompress(raw)
+        except Exception:
+            pass
+
+    # Gzip — также проверяем магические байты 0x1f 0x8b
+    if 'gzip' in enc or raw[:2] == b'\x1f\x8b':
+        try:
+            return gzip.decompress(raw)
+        except Exception:
+            pass
+
+    # Deflate
+    if 'deflate' in enc:
+        for wbits in (15, -15):
+            try:
+                return zlib.decompress(raw, wbits)
+            except Exception:
+                pass
+
+    return raw
+
+
+def _detect_charset(raw: bytes, content_type: str) -> str:
+    """
+    Определяет кодировку из:
+    1) заголовка Content-Type
+    2) мета-тегов HTML (первые 8 КБ)
+    3) BOM
+    4) chardet / charset_normalizer (если установлены)
+    5) fallback → utf-8
+    """
+    # 1. Content-Type header
+    if content_type:
+        m = re.search(r'charset\s*=\s*([^\s;,"\'>]+)', content_type, re.IGNORECASE)
+        if m:
+            return m.group(1).strip().strip('"\'')
+
+    # 2. HTML <meta charset=...> / <meta http-equiv="Content-Type" ...>
+    try:
+        snippet = raw[:8192].decode('ascii', errors='ignore')
+        # <meta charset="utf-8"> или <meta charset=utf-8>
+        m = re.search(r'<meta[^>]+charset\s*=\s*["\']?\s*([a-zA-Z0-9\-_]+)',
+                      snippet, re.IGNORECASE)
+        if m:
+            return m.group(1)
+        # <?xml version="1.0" encoding="windows-1251"?>
+        m = re.search(r'encoding\s*=\s*["\']([a-zA-Z0-9\-_]+)["\']',
+                      snippet, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+
+    # 3. BOM
+    if raw[:3] == b'\xef\xbb\xbf':
+        return 'utf-8-sig'
+    if raw[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        return 'utf-16'
+
+    # 4. chardet / charset_normalizer
+    for detector_name in ('charset_normalizer', 'chardet'):
+        try:
+            mod = __import__(detector_name)
+            result = mod.detect(raw[:20000])
+            if result and result.get('encoding') and (result.get('confidence') or 0) >= 0.65:
+                return result['encoding']
+        except Exception:
+            pass
+
+    return 'utf-8'
+
+
+def _decode_response(response) -> str:
+    """
+    Преобразует HTTP-ответ в строку HTML.
+    Всегда работает с байтами — обходит все проблемы auto-decode в curl_cffi/requests.
+    """
+    raw = response.content  # bytes, всегда
+
+    # Явная декомпрессия (страховка)
+    content_encoding = response.headers.get('content-encoding', '')
+    raw = _decompress_bytes(raw, content_encoding)
+
+    # Определяем кодировку
+    content_type = response.headers.get('content-type', '')
+    charset = _detect_charset(raw, content_type)
+
+    # Декодируем с заменой нераспознанных символов (не падаем)
+    try:
+        return raw.decode(charset, errors='replace')
+    except (LookupError, UnicodeDecodeError):
+        return raw.decode('utf-8', errors='replace')
+
+
+# ---------------------------------------------------------------------------
+# HTTP-запрос
+# ---------------------------------------------------------------------------
+
 def _fetch_page(target_url, proxies_dict):
     """
-    Выполняет HTTP-запрос и возвращает (html_text, None) или (None, error_str).
+    Выполняет GET-запрос и возвращает (html_text, None) или (None, error_str).
+    html_text — всегда нормальная читаемая строка, без кракозябров.
     """
     try:
         if CURL_CFFI_AVAILABLE:
@@ -286,11 +322,8 @@ def _fetch_page(target_url, proxies_dict):
 
         response.raise_for_status()
 
-        encoding = getattr(response, 'encoding', None) or ''
-        if not encoding or encoding.lower() in ('iso-8859-1', 'latin-1'):
-            response.encoding = response.apparent_encoding or 'utf-8'
-        html = response.text
-        return html, None
+        html_text = _decode_response(response)
+        return html_text, None
 
     except Exception as e:
         err_str = str(e).lower()
@@ -323,12 +356,30 @@ def _fetch_page(target_url, proxies_dict):
         return None, f'Ошибка: {str(e)[:80]}'
 
 
+# ---------------------------------------------------------------------------
+# Поиск в сыром HTML
+# ---------------------------------------------------------------------------
+
+def find_in_raw_html(needle: str, html: str) -> bool:
+    """
+    Ищет needle в сыром HTML-коде страницы.
+    - Регистронезависимо
+    - Без нормализации, без удаления тегов
+    - Ищет ВЕЗДЕ: тексты, атрибуты, href, скрипты, комментарии
+    """
+    if not needle or not html:
+        return False
+    needle = needle.strip()
+    if not needle:
+        return False
+    return needle.lower() in html.lower()
+
+
+# ---------------------------------------------------------------------------
+# Проверка страницы
+# ---------------------------------------------------------------------------
+
 def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
-    """
-    Загружает страницу и ищет anchor и/или keys в тексте.
-    При ошибке прокси автоматически переключается на следующий (до 3 попыток).
-    Возвращает (bool, str).
-    """
     if pd.isna(url) or str(url).strip() == '':
         return False, 'Пустой URL'
 
@@ -370,21 +421,17 @@ def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
     else:
         return False, 'Ошибка прокси (все попытки исчерпаны)'
 
+    # Быстрая проверка капчи / DDoS-защиты (только первые 5000 символов текста)
     soup = BeautifulSoup(html, 'html.parser')
-
-    for tag in soup(['script', 'style', 'head']):
-        tag.decompose()
-
-    quick_text = normalize_text(soup.get_text(separator=' ')[:5000])
+    quick_text = soup.get_text(separator=' ')[:5000].lower()
     for marker in CAPTCHA_MARKERS:
-        if normalize_text(marker) in quick_text:
+        if marker in quick_text:
             add_log(f'Обнаружена защита на {target_url}: {marker}', 'WARN')
             return False, f'Скрытая защита: {marker}'
 
-    text_variants = extract_all_text(soup)
-
-    anchor_found = anchor_valid and keyword_in_texts(anchor, text_variants)
-    keys_found   = keys_valid   and keyword_in_texts(keys,   text_variants)
+    # Поиск в СЫРОМ HTML — регистронезависимо, без нормализации
+    anchor_found = anchor_valid and find_in_raw_html(str(anchor).strip(), html)
+    keys_found   = keys_valid   and find_in_raw_html(str(keys).strip(),   html)
 
     if anchor_found or keys_found:
         found_what = []
@@ -401,14 +448,46 @@ def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
 
 
 # ---------------------------------------------------------------------------
+# Просмотр исходного кода страницы
+# ---------------------------------------------------------------------------
+
+@app.route('/source')
+def view_source():
+    url     = request.args.get('url', '').strip()
+    keyword = request.args.get('kw', '').strip()
+
+    if not url:
+        return "URL не указан", 400
+
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+
+    html_src, error = _fetch_page(url, None)
+
+    if html_src:
+        safe_json = (
+            json.dumps(html_src)
+            .replace('</script>', r'<\/script>')
+            .replace('<!--',      r'<\!--')
+        )
+    else:
+        safe_json = '""'
+
+    return render_template(
+        'source.html',
+        url=url,
+        keyword=keyword,
+        source_json=safe_json,
+        error=error,
+        size_kb=round(len(html_src) / 1024, 1) if html_src else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Обёртка для потока
 # ---------------------------------------------------------------------------
 
 def process_row(row_index, row_data, proxies_list):
-    """
-    Обрабатывает одну строку таблицы в отдельном потоке.
-    Возвращает (row_index, result_dict).
-    """
     row_list = list(row_data)
     if len(row_list) < 7:
         row_list.extend([''] * (7 - len(row_list)))
@@ -429,14 +508,17 @@ def process_row(row_index, row_data, proxies_list):
         proxies_list=proxies_list,
     )
 
+    def safe(v):
+        return v if pd.notna(v) else ''
+
     result = {
-        'order_date':     order_date     if pd.notna(order_date)     else '',
-        'project_link':   project_link   if pd.notna(project_link)   else '',
-        'anchor':         anchor         if pd.notna(anchor)         else '',
-        'col_d':          col_d          if pd.notna(col_d)          else '',
-        'target_url':     target_url     if pd.notna(target_url)     else '',
-        'placement_date': placement_date if pd.notna(placement_date) else '',
-        'link_type':      link_type      if pd.notna(link_type)      else '',
+        'order_date':     safe(order_date),
+        'project_link':   safe(project_link),
+        'anchor':         safe(anchor),
+        'col_d':          safe(col_d),
+        'target_url':     safe(target_url),
+        'placement_date': safe(placement_date),
+        'link_type':      safe(link_type),
         'found':          is_found,
         'status':         status_msg,
         'proxy_used':     current_proxy.split('@')[-1] if current_proxy else 'Без прокси',
@@ -457,10 +539,8 @@ def index():
     if request.method == 'POST':
         file     = request.files.get('file')
         raw_text = request.form.get('raw_text', '').strip()
-
         df = None
 
-        # Сбрасываем логи перед новым запуском
         clear_logs()
 
         if raw_text:
@@ -477,7 +557,6 @@ def index():
             df = pd.read_excel(file, header=None)
 
         if df is not None:
-            # Фильтрация пустых строк ДО отправки в пул
             valid_rows = []
             for index, row in df.iterrows():
                 row_list = list(row)
@@ -496,7 +575,6 @@ def index():
                 proxy_info = f'{len(proxies_list)} прокси' if proxies_list else 'без прокси'
                 add_log(f'Начало проверки: {len(valid_rows)} строк, {proxy_info}')
 
-                # Инициализируем round-robin один раз перед пулом
                 init_proxy_cycle(proxies_list)
 
                 num_workers = max(1, min(len(proxies_list) if proxies_list else 4, 20))
@@ -531,9 +609,7 @@ def index():
                             }
                             add_log(f'Ошибка потока: {str(e)[:80]}', 'ERROR')
 
-                # Восстанавливаем исходный порядок строк
                 results = [ordered_results[idx] for idx, _ in valid_rows if idx in ordered_results]
-
                 found_count = sum(1 for r in results if r['found'])
                 add_log(
                     f'Готово! Найдено: {found_count}/{len(results)} '
