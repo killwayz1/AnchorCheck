@@ -218,7 +218,7 @@
             color: rgba(255, 255, 255, 0.72);
         }
 
-        /* ── Log panel (УВЕЛИЧЕН) ── */
+        /* ── Log panel ── */
 
         .log-box {
             display: none;
@@ -242,7 +242,6 @@
 
         .log-body {
             height: 380px;
-            /* было 210px */
             overflow-y: auto;
             padding: 12px 16px;
             font-family: monospace;
@@ -250,60 +249,19 @@
             line-height: 1.9;
         }
 
-        .log-body::-webkit-scrollbar {
-            width: 4px;
-        }
+        .log-body::-webkit-scrollbar { width: 4px; }
+        .log-body::-webkit-scrollbar-track { background: transparent; }
+        .log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
 
-        .log-body::-webkit-scrollbar-track {
-            background: transparent;
-        }
+        .log-line { display: flex; gap: 10px; }
+        .log-ts { color: rgba(255,255,255,0.2); flex-shrink: 0; }
+        .log-msg { color: rgba(255,255,255,0.48); word-break: break-all; }
+        .log-msg.ok    { color: #6fcf97; }
+        .log-msg.warn  { color: #f0c060; }
+        .log-msg.error { color: #e57373; }
+        .log-msg.done  { color: rgba(255,255,255,0.9); font-weight: 600; }
 
-        .log-body::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.12);
-            border-radius: 2px;
-        }
-
-        .log-line {
-            display: flex;
-            gap: 10px;
-        }
-
-        .log-ts {
-            color: rgba(255, 255, 255, 0.2);
-            flex-shrink: 0;
-        }
-
-        .log-msg {
-            color: rgba(255, 255, 255, 0.48);
-            word-break: break-all;
-        }
-
-        .log-msg.ok {
-            color: #6fcf97;
-        }
-
-        .log-msg.warn {
-            color: #f0c060;
-        }
-
-        .log-msg.error {
-            color: #e57373;
-        }
-
-        .log-msg.done {
-            color: rgba(255, 255, 255, 0.9);
-            font-weight: 600;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
-        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         /* ── Results header ── */
 
@@ -334,20 +292,9 @@
             font-weight: 600;
         }
 
-        .chip-total {
-            background: rgba(116, 185, 255, 0.12);
-            color: #74b9ff;
-        }
-
-        .chip-found {
-            background: rgba(46, 204, 113, 0.12);
-            color: #2ecc71;
-        }
-
-        .chip-missing {
-            background: rgba(231, 76, 60, 0.12);
-            color: #e74c3c;
-        }
+        .chip-total   { background: rgba(116,185,255,0.12); color: #74b9ff; }
+        .chip-found   { background: rgba(46,204,113,0.12);  color: #2ecc71; }
+        .chip-missing { background: rgba(231,76,60,0.12);   color: #e74c3c; }
 
         /* ── Table ── */
 
@@ -386,32 +333,17 @@
             vertical-align: middle;
         }
 
-        tr:last-child td {
-            border-bottom: none;
-        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background-color: rgba(255,255,255,0.025); }
 
-        tr:hover td {
-            background-color: rgba(255, 255, 255, 0.025);
-        }
-
-        .row-found td {
-            /* найдено — нейтральный фон */
-        }
-
-        .row-missing td {
-            background-color: rgba(58, 28, 28, 0.6);
-        }
+        .row-missing td { background-color: rgba(58,28,28,0.6); }
 
         a {
             color: var(--accent-color);
             text-decoration: none;
             transition: color 0.2s;
         }
-
-        a:hover {
-            color: #81ecec;
-            text-decoration: underline;
-        }
+        a:hover { color: #81ecec; text-decoration: underline; }
 
         /* ── Status badge ── */
         .status-badge {
@@ -423,16 +355,48 @@
             white-space: nowrap;
         }
 
-        .badge-ok {
-            background: rgba(46, 204, 113, 0.15);
-            color: #2ecc71;
-            border: 1px solid rgba(46, 204, 113, 0.3);
-        }
+        .badge-ok   { background: rgba(46,204,113,0.15); color: #2ecc71; border: 1px solid rgba(46,204,113,0.3); }
+        .badge-fail { background: rgba(231,76,60,0.15);  color: #e74c3c; border: 1px solid rgba(231,76,60,0.3); }
 
-        .badge-fail {
-            background: rgba(231, 76, 60, 0.15);
+        /* Кликабельные бейджи (только на не-найденных) */
+        .badge-clickable {
+            cursor: pointer;
+            transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.12s;
+            user-select: none;
+        }
+        .badge-clickable:hover {
+            background: rgba(46,204,113,0.28);
+            color: #2ecc71;
+            border-color: rgba(46,204,113,0.55);
+            transform: scale(1.06);
+        }
+        .badge-clickable:active {
+            transform: scale(0.97);
+        }
+        /* Подсказка-иконка на hover */
+        .badge-clickable::after {
+            content: ' ✓';
+            opacity: 0;
+            transition: opacity 0.15s;
+            font-size: 11px;
+        }
+        .badge-clickable:hover::after {
+            opacity: 1;
+        }
+        /* Вручную помеченный — чуть другой зелёный, чтобы отличать */
+        .badge-manual {
+            background: rgba(46,204,113,0.22);
+            color: #2ecc71;
+            border: 1px dashed rgba(46,204,113,0.55);
+            cursor: pointer;
+            transition: background 0.18s, transform 0.12s;
+            user-select: none;
+        }
+        .badge-manual:hover {
+            background: rgba(231,76,60,0.22);
             color: #e74c3c;
-            border: 1px solid rgba(231, 76, 60, 0.3);
+            border-color: rgba(231,76,60,0.45);
+            transform: scale(1.04);
         }
 
         /* ── Source button ── */
@@ -441,8 +405,8 @@
             align-items: center;
             gap: 5px;
             padding: 5px 10px;
-            background: rgba(116, 185, 255, 0.1);
-            border: 1px solid rgba(116, 185, 255, 0.25);
+            background: rgba(116,185,255,0.1);
+            border: 1px solid rgba(116,185,255,0.25);
             border-radius: 6px;
             color: var(--accent-color);
             font-size: 11px;
@@ -453,10 +417,9 @@
             transition: background 0.2s, border-color 0.2s;
             white-space: nowrap;
         }
-
         .source-btn:hover {
-            background: rgba(116, 185, 255, 0.2);
-            border-color: rgba(116, 185, 255, 0.5);
+            background: rgba(116,185,255,0.2);
+            border-color: rgba(116,185,255,0.5);
             color: #a8d8ff;
             text-decoration: none;
         }
@@ -486,353 +449,339 @@
             gap: 8px;
         }
 
-        .copy-bad-btn {
-            background: var(--red-btn);
-            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.2);
-        }
-
-        .copy-bad-btn:hover {
-            background: var(--red-btn-hover);
-            transform: translateY(-2px);
-        }
-
-        .copy-good-btn {
-            background: var(--green-btn);
-            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.2);
-        }
-
-        .copy-good-btn:hover {
-            background: var(--green-btn-hover);
-            transform: translateY(-2px);
-        }
-
-        .clear-btn {
-            background: var(--orange-btn);
-            box-shadow: 0 4px 15px rgba(243, 156, 18, 0.2);
-        }
-
-        .clear-btn:hover {
-            background: var(--orange-btn-hover);
-            transform: translateY(-2px);
-        }
+        .copy-bad-btn  { background: var(--red-btn);    box-shadow: 0 4px 15px rgba(231,76,60,0.2); }
+        .copy-bad-btn:hover  { background: var(--red-btn-hover);  transform: translateY(-2px); }
+        .copy-good-btn { background: var(--green-btn);  box-shadow: 0 4px 15px rgba(46,204,113,0.2); }
+        .copy-good-btn:hover { background: var(--green-btn-hover); transform: translateY(-2px); }
+        .clear-btn     { background: var(--orange-btn); box-shadow: 0 4px 15px rgba(243,156,18,0.2); }
+        .clear-btn:hover     { background: var(--orange-btn-hover); transform: translateY(-2px); }
 
         /* ── Column widths ── */
-        .col-date {
-            width: 100px;
-            white-space: nowrap;
-        }
-
-        .col-proj {
-            width: 160px;
-        }
-
-        .col-anchor {
-            width: 160px;
-        }
-
-        .col-kw {
-            width: 160px;
-        }
-
-        .col-url {
-            min-width: 200px;
-        }
-
-        .col-pdate {
-            width: 110px;
-            white-space: nowrap;
-        }
-
-        .col-type {
-            width: 100px;
-        }
-
-        .col-status {
-            width: 150px;
-        }
-
-        .col-action {
-            width: 90px;
-            text-align: center;
-        }
+        .col-date   { width: 100px; white-space: nowrap; }
+        .col-proj   { width: 160px; }
+        .col-anchor { width: 160px; }
+        .col-kw     { width: 160px; }
+        .col-url    { min-width: 200px; }
+        .col-pdate  { width: 110px; white-space: nowrap; }
+        .col-type   { width: 100px; }
+        .col-status { width: 190px; }
+        .col-action { width: 90px; text-align: center; }
     </style>
 </head>
 
 <body>
 
-    <div class="container">
-        <h2>🔍 Проверка размещения анкоров</h2>
+<div class="container">
+    <h2>🔍 Проверка размещения анкоров</h2>
 
-        {% if not results %}
-        <!-- ── Upload form ── -->
-        <div class="upload-section" id="uploadSection">
-            <form method="POST" enctype="multipart/form-data" id="uploadForm"
-                style="width:100%;display:flex;flex-direction:column;align-items:center;">
+    {% if not results %}
+    <!-- ── Upload form ── -->
+    <div class="upload-section" id="uploadSection">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm"
+              style="width:100%;display:flex;flex-direction:column;align-items:center;">
 
-                <div class="upload-area" id="dropZone">
-                    <svg class="cloud-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.36 8.04
-                             2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5
-                             0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
-                    </svg>
-                    <div class="upload-text">Нажмите или перетащите <strong>Excel файл</strong> сюда</div>
-                    <input type="file" name="file" accept=".xlsx,.xls" id="fileInput">
-                </div>
-
-                <div class="or-divider">ИЛИ</div>
-
-                <div class="paste-area">
-                    <textarea name="raw_text" id="pasteInput"
-                        placeholder="Вставьте строки (Ctrl+V) из Excel или Google Таблиц..."></textarea>
-                </div>
-
-                <button class="submit-btn" type="submit" id="submitBtn">▶ Запустить проверку</button>
-            </form>
-
-            <!-- Loading overlay -->
-            <div class="loading-overlay" id="loadingOverlay">
-                <h3>⏳ Проверяем ссылки, пожалуйста подождите...</h3>
-
-                <div class="media-box" id="gifPanel">
-                    <img src="/fadding-cat.gif" alt="Проверка идёт..." class="cat-gif">
-                </div>
-
-                <div class="log-box" id="logPanel">
-                    <div class="log-status">
-                        <span id="logStatusText">ожидание...</span>
-                        <span id="logCount">0 записей</span>
-                    </div>
-                    <div class="log-body" id="logBody"></div>
-                </div>
-
-                <button class="view-toggle-btn" id="viewToggleBtn" onclick="toggleView()">
-                    📋 Показать логи
-                </button>
+            <div class="upload-area" id="dropZone">
+                <svg class="cloud-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.36 8.04
+                         2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5
+                         0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                </svg>
+                <div class="upload-text">Нажмите или перетащите <strong>Excel файл</strong> сюда</div>
+                <input type="file" name="file" accept=".xlsx,.xls" id="fileInput">
             </div>
 
-            <div class="proxy-info" id="proxyInfo">
-                Прокси из proxy.txt: <strong>{{ proxy_count }}</strong>
+            <div class="or-divider">ИЛИ</div>
+
+            <div class="paste-area">
+                <textarea name="raw_text" id="pasteInput"
+                    placeholder="Вставьте строки (Ctrl+V) из Excel или Google Таблиц..."></textarea>
             </div>
-        </div>
-        {% endif %}
 
-        {% if results %}
-        <!-- ── Results ── -->
-        {% set found_count = results | selectattr('found') | list | length %}
-        {% set missing_count = results | rejectattr('found') | list | length %}
+            <button class="submit-btn" type="submit" id="submitBtn">▶ Запустить проверку</button>
+        </form>
 
-        <div class="file-processed-info">
-            Файл: <strong style="color:#ffffff;">{{ filename }}</strong>
-        </div>
+        <!-- Loading overlay -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <h3>⏳ Проверяем ссылки, пожалуйста подождите...</h3>
 
-        <div class="summary-bar">
-            <div class="chip chip-total"> 📊 Всего: {{ results | length }}</div>
-            <div class="chip chip-found"> ✅ Найдено: {{ found_count }}</div>
-            <div class="chip chip-missing"> ❌ Не найдено: {{ missing_count }}</div>
-        </div>
+            <div class="media-box" id="gifPanel">
+                <img src="/fadding-cat.gif" alt="Проверка идёт..." class="cat-gif">
+            </div>
 
-        <div class="table-wrap">
-            <table id="resultsTable">
-                <thead>
-                    <tr>
-                        <th class="col-date">Дата заказа</th>
-                        <th class="col-proj">Проект (B)</th>
-                        <th class="col-anchor">Анкор (C)</th>
-                        <th class="col-kw">Keywords (D)</th>
-                        <th class="col-url">Ссылка на сайт (E)</th>
-                        <th class="col-pdate">Дата проставки</th>
-                        <th class="col-type">Тип ссылки</th>
-                        <th class="col-status">Статус</th>
-                        <th class="col-action">Код страницы</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in results %}
-                    <tr class="{% if row.found %}row-found{% else %}row-missing{% endif %}">
-                        <td class="col-date">{{ row.order_date }}</td>
-                        <td class="col-proj">{{ row.project_link }}</td>
-                        <td class="col-anchor">{{ row.anchor }}</td>
-                        <td class="col-kw">{{ row.col_d }}</td>
-                        <td class="col-url">
-                            <a href="{{ row.target_url }}" target="_blank" rel="noopener">
-                                {{ row.target_url }}
-                            </a>
-                        </td>
-                        <td class="col-pdate">{{ row.placement_date }}</td>
-                        <td class="col-type">{{ row.link_type }}</td>
-                        <td class="col-status">
-                            <span class="status-badge {% if row.found %}badge-ok{% else %}badge-fail{% endif %}">
-                                {{ row.status }}
-                            </span>
-                        </td>
-                        <td class="col-action">
-                            <button class="source-btn" data-url="{{ row.target_url | e }}"
-                                data-kw="{{ row.anchor | e }}" onclick="openSource(this)">
-                                📄 Код
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+            <div class="log-box" id="logPanel">
+                <div class="log-status">
+                    <span id="logStatusText">ожидание...</span>
+                    <span id="logCount">0 записей</span>
+                </div>
+                <div class="log-body" id="logBody"></div>
+            </div>
 
-        <div class="buttons-panel">
-            <button class="action-btn copy-bad-btn" onclick="copyBad()">
-                ❌ Скопировать ненайденные (B–G)
+            <button class="view-toggle-btn" id="viewToggleBtn" onclick="toggleView()">
+                📋 Показать логи
             </button>
-            <button class="action-btn copy-good-btn" onclick="copyGood()">
-                ✅ Скопировать найденные ссылки
-            </button>
-            <a href="/" class="action-btn clear-btn">
-                🔄 Новая проверка
-            </a>
         </div>
 
-        <script>
-            /* ── Открыть просмотр исходника ── */
-            function openSource(btn) {
-                const url = btn.getAttribute('data-url');
-                const kw = btn.getAttribute('data-kw');
-                const params = new URLSearchParams({ url: url, kw: kw });
-                window.open('/source?' + params.toString(), '_blank');
-            }
-
-            /* ── Копирование ── */
-            function copyToClipboard(text, msg) {
-                if (!text.trim()) { alert('Нет данных для копирования'); return; }
-                navigator.clipboard.writeText(text)
-                    .then(() => alert(msg))
-                    .catch(() => alert('Не удалось скопировать.'));
-            }
-
-            function copyBad() {
-                const rows = document.querySelectorAll('#resultsTable tbody tr.row-missing');
-                let out = '';
-                rows.forEach(r => {
-                    const proj = r.cells[1].innerText.trim();
-                    const anchor = r.cells[2].innerText.trim();
-                    const kw = r.cells[3].innerText.trim();
-                    const type = r.cells[6].innerText.trim();
-                    out += `${proj}\t${anchor}\t${kw}\t\t\t${type}\n`;
-                });
-                copyToClipboard(out, `Скопировано ${rows.length} строк (ненайденные)`);
-            }
-
-            function copyGood() {
-                const rows = document.querySelectorAll('#resultsTable tbody tr.row-found');
-                let out = '';
-                rows.forEach(r => {
-                    out += r.cells[4].innerText.trim() + '\n';
-                });
-                copyToClipboard(out, `Скопировано ${rows.length} ссылок (найденные)`);
-            }
-        </script>
-        {% endif %}
-
-
-        {% if not results %}
-        <script>
-            /* ── Смена файла ── */
-            document.getElementById('fileInput').addEventListener('change', function (e) {
-                if (!e.target.files.length) return;
-                const name = e.target.files[0].name;
-                document.querySelector('.upload-text').innerHTML =
-                    `Готов к проверке:<br><strong style="color:#2ecc71;font-size:16px;">${name}</strong>`;
-                const zone = document.getElementById('dropZone');
-                zone.style.borderColor = '#2ecc71';
-                zone.style.backgroundColor = 'rgba(46,204,113,0.05)';
-                document.querySelector('.cloud-icon').style.fill = '#2ecc71';
-            });
-
-            /* ── Сабмит формы ── */
-            document.getElementById('uploadForm').addEventListener('submit', function (e) {
-                const fi = document.getElementById('fileInput');
-                const pi = document.getElementById('pasteInput');
-                if (!fi.files.length && !pi.value.trim()) {
-                    e.preventDefault();
-                    alert('Загрузите Excel файл или вставьте строки в поле.');
-                    return;
-                }
-                document.getElementById('dropZone').style.display = 'none';
-                document.querySelector('.or-divider').style.display = 'none';
-                document.querySelector('.paste-area').style.display = 'none';
-                document.getElementById('submitBtn').style.display = 'none';
-                document.getElementById('proxyInfo').style.display = 'none';
-                document.getElementById('loadingOverlay').style.display = 'flex';
-                startPolling();
-            });
-
-            /* ── Переключение GIF / Логи ── */
-            let showingLogs = false;
-
-            function toggleView() {
-                const gif = document.getElementById('gifPanel');
-                const log = document.getElementById('logPanel');
-                const btn = document.getElementById('viewToggleBtn');
-                showingLogs = !showingLogs;
-                if (showingLogs) {
-                    gif.style.display = 'none';
-                    log.style.display = 'block';
-                    btn.textContent = '🐱 Вернуться к гифке';
-                    const lb = document.getElementById('logBody');
-                    lb.scrollTop = lb.scrollHeight;
-                } else {
-                    gif.style.display = 'block';
-                    log.style.display = 'none';
-                    btn.textContent = '📋 Показать логи';
-                }
-            }
-
-            /* ── Поллинг логов ── */
-            let lastLogId = 0;
-            let pollTimer = null;
-            const LEVEL_CLS = { OK: 'ok', WARN: 'warn', ERROR: 'error', DONE: 'done' };
-
-            function appendLogs(messages) {
-                const body = document.getElementById('logBody');
-                const count = document.getElementById('logCount');
-                const status = document.getElementById('logStatusText');
-                let cnt = parseInt(count.textContent) || 0;
-                const atBottom = body.scrollHeight - body.clientHeight - body.scrollTop < 50;
-
-                messages.forEach(m => {
-                    const lvl = (m.level || 'INFO').toUpperCase();
-                    const cls = LEVEL_CLS[lvl] || '';
-                    const div = document.createElement('div');
-                    div.className = 'log-line';
-                    div.innerHTML =
-                        `<span class="log-ts">${m.ts}</span>` +
-                        `<span class="log-msg ${cls}">${esc(m.msg)}</span>`;
-                    body.appendChild(div);
-                    cnt++;
-                    lastLogId = Math.max(lastLogId, m.id);
-                    status.textContent = m.msg.length > 55 ? m.msg.slice(0, 55) + '…' : m.msg;
-                });
-
-                count.textContent = cnt + ' записей';
-                if (showingLogs && atBottom) body.scrollTop = body.scrollHeight;
-            }
-
-            function esc(s) {
-                return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            }
-
-            function startPolling() {
-                pollTimer = setInterval(async () => {
-                    try {
-                        const r = await fetch('/get-logs?since=' + lastLogId);
-                        const data = await r.json();
-                        if (data.messages && data.messages.length) appendLogs(data.messages);
-                    } catch (_) {
-                        clearInterval(pollTimer);
-                    }
-                }, 600);
-            }
-        </script>
-        {% endif %}
-
+        <div class="proxy-info" id="proxyInfo">
+            Прокси из proxy.txt: <strong>{{ proxy_count }}</strong>
+        </div>
     </div>
-</body>
+    {% endif %}
 
+    {% if results %}
+    <!-- ── Results ── -->
+    {% set found_count   = results | selectattr('found') | list | length %}
+    {% set missing_count = results | rejectattr('found') | list | length %}
+
+    <div class="file-processed-info">
+        Файл: <strong style="color:#ffffff;">{{ filename }}</strong>
+    </div>
+
+    <div class="summary-bar">
+        <div class="chip chip-total">  📊 Всего: {{ results | length }}</div>
+        <div class="chip chip-found">  ✅ Найдено: <span id="counterFound">{{ found_count }}</span></div>
+        <div class="chip chip-missing">❌ Не найдено: <span id="counterMissing">{{ missing_count }}</span></div>
+    </div>
+
+    <div class="table-wrap">
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th class="col-date">Дата заказа</th>
+                    <th class="col-proj">Проект (B)</th>
+                    <th class="col-anchor">Анкор (C)</th>
+                    <th class="col-kw">Keywords (D)</th>
+                    <th class="col-url">Ссылка на сайт (E)</th>
+                    <th class="col-pdate">Дата проставки</th>
+                    <th class="col-type">Тип ссылки</th>
+                    <th class="col-status">Статус</th>
+                    <th class="col-action">Код страницы</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in results %}
+                <tr class="{% if row.found %}row-found{% else %}row-missing{% endif %}"
+                    data-orig-found="{{ 'true' if row.found else 'false' }}"
+                    data-orig-status="{{ row.status | e }}">
+                    <td class="col-date">{{ row.order_date }}</td>
+                    <td class="col-proj">{{ row.project_link }}</td>
+                    <td class="col-anchor">{{ row.anchor }}</td>
+                    <td class="col-kw">{{ row.col_d }}</td>
+                    <td class="col-url">
+                        <a href="{{ row.target_url }}" target="_blank" rel="noopener">
+                            {{ row.target_url }}
+                        </a>
+                    </td>
+                    <td class="col-pdate">{{ row.placement_date }}</td>
+                    <td class="col-type">{{ row.link_type }}</td>
+                    <td class="col-status">
+                        {% if row.found %}
+                        <span class="status-badge badge-ok">{{ row.status }}</span>
+                        {% else %}
+                        <span class="status-badge badge-fail badge-clickable"
+                              title="Нажмите, чтобы отметить как найдено вручную"
+                              onclick="toggleManual(this)">{{ row.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="col-action">
+                        <button class="source-btn" data-url="{{ row.target_url | e }}"
+                                data-kw="{{ row.anchor | e }}" onclick="openSource(this)">
+                            📄 Код
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="buttons-panel">
+        <button class="action-btn copy-bad-btn" onclick="copyBad()">
+            ❌ Скопировать ненайденные (B–G)
+        </button>
+        <button class="action-btn copy-good-btn" onclick="copyGood()">
+            ✅ Скопировать найденные ссылки
+        </button>
+        <a href="/" class="action-btn clear-btn">
+            🔄 Новая проверка
+        </a>
+    </div>
+
+    <script>
+        /* ── Открыть просмотр исходника ── */
+        function openSource(btn) {
+            const url = btn.getAttribute('data-url');
+            const kw  = btn.getAttribute('data-kw');
+            const params = new URLSearchParams({ url, kw });
+            window.open('/source?' + params.toString(), '_blank');
+        }
+
+        /* ── Ручная отметка (клик по бейджу) ── */
+        function toggleManual(badge) {
+            const tr = badge.closest('tr');
+            const isManualFound = badge.classList.contains('badge-manual');
+
+            if (!isManualFound) {
+                /* Красный → зелёный вручную */
+                tr.classList.remove('row-missing');
+                tr.classList.add('row-found');
+                badge.className = 'status-badge badge-manual';
+                badge.title = 'Отмечено вручную. Нажмите, чтобы вернуть обратно';
+                badge.textContent = '✦ Найдено (вручную)';
+            } else {
+                /* Откат к оригиналу */
+                const origStatus = tr.dataset.origStatus;
+                tr.classList.remove('row-found');
+                tr.classList.add('row-missing');
+                badge.className = 'status-badge badge-fail badge-clickable';
+                badge.title = 'Нажмите, чтобы отметить как найдено вручную';
+                badge.textContent = origStatus;
+            }
+
+            updateCounters();
+        }
+
+        /* ── Пересчёт чипов ── */
+        function updateCounters() {
+            const found   = document.querySelectorAll('#resultsTable tbody tr.row-found').length;
+            const missing = document.querySelectorAll('#resultsTable tbody tr.row-missing').length;
+            document.getElementById('counterFound').textContent   = found;
+            document.getElementById('counterMissing').textContent = missing;
+        }
+
+        /* ── Копирование ── */
+        function copyToClipboard(text, msg) {
+            if (!text.trim()) { alert('Нет данных для копирования'); return; }
+            navigator.clipboard.writeText(text)
+                .then(() => alert(msg))
+                .catch(() => alert('Не удалось скопировать.'));
+        }
+
+        function copyBad() {
+            const rows = document.querySelectorAll('#resultsTable tbody tr.row-missing');
+            let out = '';
+            rows.forEach(r => {
+                const proj   = r.cells[1].innerText.trim();
+                const anchor = r.cells[2].innerText.trim();
+                const kw     = r.cells[3].innerText.trim();
+                const type   = r.cells[6].innerText.trim();
+                out += `${proj}\t${anchor}\t${kw}\t\t\t${type}\n`;
+            });
+            copyToClipboard(out, `Скопировано ${rows.length} строк (ненайденные)`);
+        }
+
+        function copyGood() {
+            const rows = document.querySelectorAll('#resultsTable tbody tr.row-found');
+            let out = '';
+            rows.forEach(r => {
+                out += r.cells[4].innerText.trim() + '\n';
+            });
+            copyToClipboard(out, `Скопировано ${rows.length} ссылок (найденные)`);
+        }
+    </script>
+    {% endif %}
+
+
+    {% if not results %}
+    <script>
+        /* ── Смена файла ── */
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (!e.target.files.length) return;
+            const name = e.target.files[0].name;
+            document.querySelector('.upload-text').innerHTML =
+                `Готов к проверке:<br><strong style="color:#2ecc71;font-size:16px;">${name}</strong>`;
+            const zone = document.getElementById('dropZone');
+            zone.style.borderColor = '#2ecc71';
+            zone.style.backgroundColor = 'rgba(46,204,113,0.05)';
+            document.querySelector('.cloud-icon').style.fill = '#2ecc71';
+        });
+
+        /* ── Сабмит формы ── */
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const fi = document.getElementById('fileInput');
+            const pi = document.getElementById('pasteInput');
+            if (!fi.files.length && !pi.value.trim()) {
+                e.preventDefault();
+                alert('Загрузите Excel файл или вставьте строки в поле.');
+                return;
+            }
+            document.getElementById('dropZone').style.display = 'none';
+            document.querySelector('.or-divider').style.display = 'none';
+            document.querySelector('.paste-area').style.display = 'none';
+            document.getElementById('submitBtn').style.display = 'none';
+            document.getElementById('proxyInfo').style.display = 'none';
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            startPolling();
+        });
+
+        /* ── Переключение GIF / Логи ── */
+        let showingLogs = false;
+
+        function toggleView() {
+            const gif = document.getElementById('gifPanel');
+            const log = document.getElementById('logPanel');
+            const btn = document.getElementById('viewToggleBtn');
+            showingLogs = !showingLogs;
+            if (showingLogs) {
+                gif.style.display = 'none';
+                log.style.display = 'block';
+                btn.textContent = '🐱 Вернуться к гифке';
+                const lb = document.getElementById('logBody');
+                lb.scrollTop = lb.scrollHeight;
+            } else {
+                gif.style.display = 'block';
+                log.style.display = 'none';
+                btn.textContent = '📋 Показать логи';
+            }
+        }
+
+        /* ── Поллинг логов ── */
+        let lastLogId = 0;
+        let pollTimer = null;
+        const LEVEL_CLS = { OK: 'ok', WARN: 'warn', ERROR: 'error', DONE: 'done' };
+
+        function appendLogs(messages) {
+            const body   = document.getElementById('logBody');
+            const count  = document.getElementById('logCount');
+            const status = document.getElementById('logStatusText');
+            let cnt = parseInt(count.textContent) || 0;
+            const atBottom = body.scrollHeight - body.clientHeight - body.scrollTop < 50;
+
+            messages.forEach(m => {
+                const lvl = (m.level || 'INFO').toUpperCase();
+                const cls = LEVEL_CLS[lvl] || '';
+                const div = document.createElement('div');
+                div.className = 'log-line';
+                div.innerHTML =
+                    `<span class="log-ts">${m.ts}</span>` +
+                    `<span class="log-msg ${cls}">${esc(m.msg)}</span>`;
+                body.appendChild(div);
+                cnt++;
+                lastLogId = Math.max(lastLogId, m.id);
+                status.textContent = m.msg.length > 55 ? m.msg.slice(0, 55) + '…' : m.msg;
+            });
+
+            count.textContent = cnt + ' записей';
+            if (showingLogs && atBottom) body.scrollTop = body.scrollHeight;
+        }
+
+        function esc(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function startPolling() {
+            pollTimer = setInterval(async () => {
+                try {
+                    const r    = await fetch('/get-logs?since=' + lastLogId);
+                    const data = await r.json();
+                    if (data.messages && data.messages.length) appendLogs(data.messages);
+                } catch(_) {
+                    clearInterval(pollTimer);
+                }
+            }, 600);
+        }
+    </script>
+    {% endif %}
+
+</div>
+</body>
 </html>
