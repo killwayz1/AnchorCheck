@@ -298,32 +298,27 @@ def _fetch_page(target_url, proxies_dict):
     Выполняет GET-запрос и возвращает (html_text, None) или (None, error_str).
     html_text — всегда нормальная читаемая строка, без кракозябров.
     """
+    session = None
+    result = (None, 'Ошибка: неизвестная ошибка')
     try:
         if CURL_CFFI_AVAILABLE:
             session = cffi_requests.Session(impersonate="chrome124")
-            response = session.get(
-                target_url,
-                headers=HEADERS,
-                proxies=proxies_dict,
-                timeout=30,
-                verify=False,
-                allow_redirects=True,
-            )
         else:
             session = requests.Session()
-            response = session.get(
-                target_url,
-                headers=HEADERS,
-                proxies=proxies_dict,
-                timeout=30,
-                verify=False,
-                allow_redirects=True,
-            )
+
+        response = session.get(
+            target_url,
+            headers=HEADERS,
+            proxies=proxies_dict,
+            timeout=30,
+            verify=False,
+            allow_redirects=True,
+        )
 
         response.raise_for_status()
 
         html_text = _decode_response(response)
-        return html_text, None
+        result = html_text, None
 
     except Exception as e:
         err_str = str(e).lower()
@@ -333,27 +328,37 @@ def _fetch_page(target_url, proxies_dict):
             try:
                 status = resp.status_code
                 if status == 403:
-                    return None, 'Блок защиты (Ош. 403)'
-                if status == 404:
-                    return None, 'Страница не найдена (404)'
-                if status == 429:
-                    return None, 'Капча / Лимит (Ош. 429)'
-                if status >= 500:
-                    return None, f'Сайт лежит (Ош. {status})'
-                return None, f'HTTP Ошибка {status}'
+                    result = None, 'Блок защиты (Ош. 403)'
+                elif status == 404:
+                    result = None, 'Страница не найдена (404)'
+                elif status == 429:
+                    result = None, 'Капча / Лимит (Ош. 429)'
+                elif status >= 500:
+                    result = None, f'Сайт лежит (Ош. {status})'
+                else:
+                    result = None, f'HTTP Ошибка {status}'
+            except Exception:
+                result = None, f'Ошибка: {str(e)[:80]}'
+        elif any(kw in err_str for kw in ('proxy', 'tunnel connection', 'cannot connect to proxy')):
+            result = None, '__PROXY_ERROR__'
+        elif any(kw in err_str for kw in ('timeout', 'timed out', 'time out')):
+            result = None, 'Долго отвечает'
+        elif any(kw in err_str for kw in ('ssl', 'certificate')):
+            result = None, f'SSL ошибка: {str(e)[:60]}'
+        elif any(kw in err_str for kw in ('connection', 'connect', 'name or service')):
+            result = None, f'Ошибка подключения: {str(e)[:60]}'
+        else:
+            result = None, f'Ошибка: {str(e)[:80]}'
+
+    finally:
+        # Обязательно закрываем сессию — освобождает TLS-контекст и C-память curl_cffi
+        if session is not None:
+            try:
+                session.close()
             except Exception:
                 pass
 
-        if any(kw in err_str for kw in ('proxy', 'tunnel connection', 'cannot connect to proxy')):
-            return None, '__PROXY_ERROR__'
-        if any(kw in err_str for kw in ('timeout', 'timed out', 'time out')):
-            return None, 'Долго отвечает'
-        if any(kw in err_str for kw in ('ssl', 'certificate')):
-            return None, f'SSL ошибка: {str(e)[:60]}'
-        if any(kw in err_str for kw in ('connection', 'connect', 'name or service')):
-            return None, f'Ошибка подключения: {str(e)[:60]}'
-
-        return None, f'Ошибка: {str(e)[:80]}'
+    return result
 
 
 # ---------------------------------------------------------------------------
