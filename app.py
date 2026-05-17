@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import gc
 import json
 import gzip
 import zlib
@@ -29,6 +30,15 @@ try:
     BROTLI_AVAILABLE = True
 except ImportError:
     BROTLI_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# Ограничения памяти
+# ---------------------------------------------------------------------------
+
+# Максимальное количество лог-сообщений в памяти.
+# Лог не растёт бесконечно между сессиями — старые записи удаляются.
+MAX_LOG_MESSAGES = 400
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +93,9 @@ def add_log(message, level='INFO'):
             'level': level,
             'msg':   message,
         })
+        # FIX: обрезаем старые сообщения, чтобы лог не рос бесконечно
+        if len(_log_messages) > MAX_LOG_MESSAGES:
+            _log_messages = _log_messages[-MAX_LOG_MESSAGES:]
 
 
 @app.route('/get-logs')
@@ -318,6 +331,11 @@ def _fetch_page(target_url, proxies_dict):
         response.raise_for_status()
 
         html_text = _decode_response(response)
+
+        # FIX: явно освобождаем объект ответа сразу после декодирования,
+        # не ждём сборщика мусора
+        del response
+
         result = html_text, None
 
     except Exception as e:
@@ -371,13 +389,16 @@ def find_in_raw_html(needle: str, html: str) -> bool:
     - Регистронезависимо
     - Без нормализации, без удаления тегов
     - Ищет ВЕЗДЕ: тексты, атрибуты, href, скрипты, комментарии
+    FIX: используем re.search с IGNORECASE вместо html.lower(),
+    чтобы не создавать полную копию строки в памяти.
     """
     if not needle or not html:
         return False
     needle = needle.strip()
     if not needle:
         return False
-    return needle.lower() in html.lower()
+    # re.escape + IGNORECASE — не создаёт копию html в памяти (в отличие от .lower())
+    return bool(re.search(re.escape(needle), html, re.IGNORECASE))
 
 
 # ---------------------------------------------------------------------------
@@ -426,17 +447,24 @@ def check_page_content(url, anchor, keys, proxy=None, proxies_list=None):
     else:
         return False, 'Ошибка прокси (все попытки исчерпаны)'
 
-    # Быстрая проверка капчи / DDoS-защиты (только первые 5000 символов текста)
-    soup = BeautifulSoup(html, 'html.parser')
-    quick_text = soup.get_text(separator=' ')[:5000].lower()
+    # FIX: проверка капчи/DDoS через сырой HTML без создания BeautifulSoup.
+    # Ранее BeautifulSoup(html) строил полное DOM-дерево (5–10× размер HTML).
+    # Теперь ищем маркеры напрямую в первых 20 КБ сырого HTML — это точнее и
+    # не тратит память на разбор всего документа.
+    quick_check = html[:20000].lower()
     for marker in CAPTCHA_MARKERS:
-        if marker in quick_text:
+        if marker in quick_check:
             add_log(f'Обнаружена защита на {target_url}: {marker}', 'WARN')
+            del html, quick_check
             return False, f'Скрытая защита: {marker}'
+    del quick_check
 
     # Поиск в СЫРОМ HTML — регистронезависимо, без нормализации
     anchor_found = anchor_valid and find_in_raw_html(str(anchor).strip(), html)
     keys_found   = keys_valid   and find_in_raw_html(str(keys).strip(),   html)
+
+    # FIX: явно удаляем HTML из памяти сразу после поиска
+    del html
 
     if anchor_found or keys_found:
         found_what = []
@@ -576,12 +604,19 @@ def index():
                     continue
                 valid_rows.append((index, row))
 
+            # FIX: освобождаем DataFrame после извлечения строк
+            del df
+            gc.collect()
+
             if valid_rows:
                 proxy_info = f'{len(proxies_list)} прокси' if proxies_list else 'без прокси'
                 add_log(f'Начало проверки: {len(valid_rows)} строк, {proxy_info}')
 
                 init_proxy_cycle(proxies_list)
 
+                # FIX: число потоков: до 20 если прокси есть, иначе 4.
+                # Главная экономия памяти достигается отсутствием BeautifulSoup,
+                # поэтому 20 потоков теперь безопасны.
                 num_workers = max(1, min(len(proxies_list) if proxies_list else 4, 20))
                 add_log(f'Запущено потоков: {num_workers}')
 
@@ -621,6 +656,9 @@ def index():
                     f'| Не найдено: {len(results) - found_count}',
                     'DONE'
                 )
+
+                # FIX: явный вызов сборщика мусора после завершения всей обработки
+                gc.collect()
 
     return render_template(
         'index.html',
