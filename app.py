@@ -93,9 +93,10 @@ def add_log(message, level='INFO'):
             'level': level,
             'msg':   message,
         })
-        # FIX: обрезаем старые сообщения, чтобы лог не рос бесконечно
+        # FIX: срез [:] модифицирует список на месте — не создаёт новую переменную,
+        # не требует global и не аллоцирует новый список в памяти.
         if len(_log_messages) > MAX_LOG_MESSAGES:
-            _log_messages = _log_messages[-MAX_LOG_MESSAGES:]
+            _log_messages[:] = _log_messages[-MAX_LOG_MESSAGES:]
 
 
 @app.route('/get-logs')
